@@ -108,7 +108,6 @@ replace_system() {
     fi
 
     cd /mnt || error "Failed to change directory to /mnt"
-    swapoff -a || true
     find . -mindepth 1 -not \( -path './dev*' -o -path './proc*' -o -path './sys*' -o -path './mnt*' -o -path './run*' -o -path './tmp*' \) -delete || true
 
     rsync -aAX --delete \
@@ -164,6 +163,7 @@ main() {
     chroot "$VOID_MOUNT" /root/install.sh --setup || error "Setup failed"
 
     log "Replacing system..."
+    swapoff -a || true
     chroot "$VOID_MOUNT" /root/install.sh --replace || error "System replacement failed"
 
     log "Cleaning up..."
@@ -171,9 +171,8 @@ main() {
         umount "$mount" 2>/dev/null || true
     done
 
-    log "System replacement complete. Rebooting in 5 seconds..."
+    log "System replacement complete. Rebooting..."
     sync
-    sleep 1
 
     IP_ADDRESS=$(ip route get 1 2>/dev/null | awk '{print $7}' | head -1)
     FORMATTED_IP=$(printf "%-15s" "${IP_ADDRESS}")
@@ -195,8 +194,6 @@ main() {
 ║                                                                    ║
 ╚════════════════════════════════════════════════════════════════════╝
 EOF
-
-    sleep 4
 
     /sbin/reboot -f
 }
