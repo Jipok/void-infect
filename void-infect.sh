@@ -109,6 +109,7 @@ replace_system() {
 
     cd /mnt || error "Failed to change directory to /mnt"
     swapoff -a || true
+    find . -mindepth 1 -not \( -path './dev*' -o -path './proc*' -o -path './sys*' -o -path './mnt*' -o -path './run*' -o -path './tmp*' \) -delete || true
 
     rsync -aAX --delete \
         --exclude={"/dev/*","/proc/*","/sys/*","/tmp/*","/run/*","/mnt/*","/media/*","/lost+found"} \
