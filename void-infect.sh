@@ -172,7 +172,8 @@ main() {
     sync
     sleep 1
 
-    IP_ADDRESS=$(curl -s ifconfig.co)
+    IP_ADDRESS=$(ip route get 1 2>/dev/null | awk '{print $7}' | head -1)
+    FORMATTED_IP=$(printf "%-15s" "${IP_ADDRESS}")
     cat << EOF
 
 ╔════════════════════════════════════════════════════════════════════╗
@@ -187,7 +188,7 @@ main() {
 ║ To avoid connection errors, run this command                       ║
 ║ on your local machine:                                             ║
 ║                                                                    ║
-║   ssh-keygen -R ${IP_ADDRESS}                                      ║
+║   ssh-keygen -R ${FORMATTED_IP}                                    ║
 ║                                                                    ║
 ╚════════════════════════════════════════════════════════════════════╝
 EOF
