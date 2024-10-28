@@ -3,7 +3,7 @@
 Script for replacing existing Linux system with Void Linux on VPS servers.
 
 Tested on VDSina.com: Debian 12 and Ubuntu 24.04
-[screenshot](https://github.com/Jipok/void-infect/raw/refs/heads/master/screenshot.png)
+![1](https://github.com/user-attachments/assets/8c52be10-cdc6-4401-9d5e-e3996882b8a6)
 
 ## Prerequisites
 - Root access
