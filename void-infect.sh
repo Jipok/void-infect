@@ -80,7 +80,7 @@ EOL
     # echo "root:voidlinux" | chpasswd
     
     log "Disabling root password login..."
-    passwd -l root
+    passwd -l root || error "Failed to disable password"
 
     log "Removing sudo..."
     echo "ignorepkg=sudo" > /etc/xbps.d/no-sudo.conf
