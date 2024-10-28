@@ -80,7 +80,7 @@ EOL
     # echo "root:voidlinux" | chpasswd
     
     log "Disabling root password login..."
-    passwd -l root || error "Failed to disable password"
+    passwd -l root >> /dev/null || error "Failed to disable password"
 
     log "Removing sudo..."
     echo "ignorepkg=sudo" > /etc/xbps.d/no-sudo.conf
@@ -108,7 +108,6 @@ replace_system() {
     fi
 
     cd /mnt || error "Failed to change directory to /mnt"
-    find . -mindepth 1 -not \( -path './dev*' -o -path './proc*' -o -path './sys*' -o -path './mnt*' -o -path './run*' -o -path './tmp*' \) -delete
 
     rsync -aAX --delete \
         --exclude={"/dev/*","/proc/*","/sys/*","/tmp/*","/run/*","/mnt/*","/media/*","/lost+found"} \
@@ -121,7 +120,8 @@ replace_system() {
 
 main() {
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
-    [ -s /root/.ssh/authorized_keys ] || error "At least one SSH key required in root's authorized_keys" 
+    [ -s /root/.ssh/authorized_keys ] || error "At least one SSH key required in root's authorized_keys"
+    command -v wget >/dev/null 2>&1 || error "wget is not installed"
 
     log "Creating temporary directories..."
     TEMP_DIR=$(mktemp -d)
