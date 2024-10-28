@@ -13,7 +13,7 @@ Tested on VDSina.com: Debian 12 and Ubuntu 24.04
 
 ## Usage
 ```bash
-wget https://github.com/Jipok/void-infect/raw/refs/heads/master/void-infect.sh
+wget https://raw.githubusercontent.com/Jipok/void-infect/refs/heads/master/void-infect.sh
 chmod +x void-infect.sh
 ./void-infect.sh
 ```

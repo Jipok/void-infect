@@ -121,6 +121,7 @@ replace_system() {
 
 main() {
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
+    [ -s /root/.ssh/authorized_keys ] || error "At least one SSH key required in root's authorized_keys" 
 
     log "Creating temporary directories..."
     TEMP_DIR=$(mktemp -d)
