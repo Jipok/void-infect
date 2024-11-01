@@ -14,6 +14,7 @@ SET_HOSTNAME=void-vps
 # Colors for pretty output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 log() {
@@ -46,8 +47,8 @@ handle_error() {
 ╠════════════════════════════════════════════════════════════════════╣
 ║ ${GREEN}The system has NOT been broken.  ${NC}                                  ║
 ║ You can safely:                                                    ║
-║   1. rm -rf /void                                                  ║
-║   2. Reboot the system                                             ║
+║   1. Reboot the system                                             ║
+║   2. rm -rf /void                                                  ║
 ╚════════════════════════════════════════════════════════════════════╝
 "
     else
@@ -258,10 +259,16 @@ echo                                "rm -rf /void #VOID-INFECT-STAGE-3"         
 echo                                "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local "    >> /etc/rc.local 
 
 log "Configuring SSH..."
+# Secure SSH configuration
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
-ln -sf /etc/sv/sshd /etc/runit/runsvdir/default/
+# Generate only modern Ed25519 key (faster and more secure than RSA)
+try 'ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ""'
+SSH_FP=$(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub | awk '{print $2}')
+# Prevent generation of legacy keys during service start
+cp -r /etc/sv/sshd /etc/runit/runsvdir/default/
+sed -i '/ssh-keygen -A/d' /etc/runit/runsvdir/default//sshd/run
 
 log "Disabling root password login..."
 try passwd -l root
@@ -305,17 +312,17 @@ echo -e "
 ╔════════════════════════════════════════════════════════════════════╗
 ║                       IMPORTANT INFORMATION                        ║
 ╠════════════════════════════════════════════════════════════════════╣
-║ System has been successfully reinstalled!                          ║
-║                                                                    ║
-║ ATTENTION: SSH host keys have been regenerated.                    ║
 ║ You will receive a warning about changed host key                  ║
 ║ on your next SSH connection.                                       ║
 ║                                                                    ║
 ║ To avoid connection errors, run this command                       ║
 ║ on your local machine:                                             ║
-║                                                                    ║
 ║   ${GREEN}ssh-keygen -R ${FORMATTED_IP}${NC}                                    ║
 ║                                                                    ║
+║ New SSH host key fingerprint:                                      ║
+║   ${BLUE}${SSH_FP}${NC}               ║
+║                                                                    ║
+║ Verify the fingerprint when connecting!                            ║
 ╚════════════════════════════════════════════════════════════════════╝
 "
 
