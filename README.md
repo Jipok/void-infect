@@ -3,7 +3,9 @@
 Script for replacing existing Linux system with Void Linux on VPS servers.
 
 Tested on VDSina.com: Debian, Ubuntu and CentOS
-![1](https://github.com/user-attachments/assets/8c52be10-cdc6-4401-9d5e-e3996882b8a6)
+
+![изображение](https://github.com/user-attachments/assets/e35b88d0-cb3a-4263-9dac-efe0a513f3b7)
+
 
 ## Prerequisites
 - Root access
