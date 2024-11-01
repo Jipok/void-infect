@@ -180,6 +180,12 @@ try xbps-install -Syu xbps
 log "Updating packages..."
 try xbps-install -Syu
 
+log "Configuring xbps..."
+echo 'ignorepkg=linux-firmware-amd
+ignorepkg=linux-firmware-intel
+ignorepkg=linux-firmware-nvidia
+ignorepkg=linux-firmware-network' >> /etc/xbps.d/ignore.conf
+
 log "Installing base system..."
 # Don't use `base-system` because it contains heavy and useless WiFi drivers
 try xbps-install -y base-minimal linux

@@ -21,7 +21,6 @@ chmod +x void-infect.sh
 
 The script automatically:
 - Downloads and configures Void Linux rootfs
-- Preserves SSH keys and network configuration
 - Installs essential packages and [Cute-bash](https://github.com/Jipok/Cute-bash)
 - Replaces existing OS and reboots
 
