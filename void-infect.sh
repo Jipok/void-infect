@@ -197,6 +197,18 @@ try xbps-install -y $ADD_PKG
 log "Installing simple cron..."
 try xbps-install -y scron
 ln -sf /etc/sv/crond /etc/runit/runsvdir/default/
+echo "# * (wildcard), 30 (number), */N (repeat), 1-5 (range), or 1,3,6 (list)
+#
+# .---------------- minute (0 - 59)
+# | .------------- hour (0 - 23)
+# | |  .---------- day of month (1 - 31)
+# | |  |  .------- month (1 - 12)
+# | |  |  |    .-- day of week (0 - 6)
+# | |  |  |    |
+# m h dom mon dow   command
+
+0 4 * * * run-parts /etc/cron.daily &>> /var/log/cron.daily.log
+" > /etc/crontab
 
 log "Installing ufw..."
 try xbps-install -y ufw
@@ -275,7 +287,7 @@ tar -cf - \
     --exclude='./dev/*' \
     --exclude='./proc/*' \
     --exclude='./sys/*' \
-    --exclude='./tmp' \
+    --exclude='./tmp/*' \
     --exclude='./run/*' \
     --exclude='./media/*' \
     --exclude='./lost+found' \
