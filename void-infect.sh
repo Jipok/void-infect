@@ -217,6 +217,7 @@ sed -i 's/ENABLED=no/ENABLED=yes/' /etc/ufw/ufw.conf
 echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local 
 
 log "Disabling unused services (agetty, udev)..."
+xbps-remove -Oo
 rm /etc/runit/runsvdir/default/agetty*
 rm /etc/runit/runsvdir/default/udevd
 
