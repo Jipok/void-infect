@@ -1,15 +1,15 @@
 #!//usr/bin/env bash
 # void-infect: Install Void linux over the existing OS on VPS
 # Inspired by nixos-infect (https://github.com/elitak/nixos-infect)
-
 set -e  # Exit on any error
 
-# Script inspired by nixos-infect (https://github.com/elitak/nixos-infect)
 
 VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20240314.tar.xz"
+VOID_HASH="9087a3e23367347a717f0bb11c2541e6abe93054a146cc3aa95545d32379b8a1"
 ADD_LOCALE="ru_RU.UTF-8" # Optional
 ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree neofetch"
 SET_HOSTNAME=void-vps
+
 
 # Colors for pretty output
 RED='\033[0;31m'
@@ -104,11 +104,18 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     log "Downloading Void Linux rootfs..."
     try curl -fL "$VOID_LINK" -o "/void/rootfs.tar.xz"
 
+    log "Verifying SHA256 checksum..."
+    CALCULATED_HASH=$(sha256sum "/void/rootfs.tar.xz" | cut -d' ' -f1)
+    if [ "$CALCULATED_HASH" != "$VOID_HASH" ]; then
+        error "SHA256 checksum verification failed!"
+    fi
+
     log "Extracting rootfs..."
     try tar xf "/void/rootfs.tar.xz" -C "/void"
     try rm "/void/rootfs.tar.xz"
 
     log "Copying essential files..."
+    echo "$SET_HOSTNAME" > /void/etc/hostname
     # self
     cp "$SCRIPT_PATH" /void/void-infect.sh
     # ssh
@@ -194,8 +201,9 @@ ln -sf /etc/sv/ufw /etc/runit/runsvdir/default/
 sed -i 's/ENABLED=no/ENABLED=yes/' /etc/ufw/ufw.conf
 echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local 
 
-log "Removing useless aggetty services..."
+log "Disabling unused services (agetty, udev)..."
 rm /etc/runit/runsvdir/default/agetty*
+rm /etc/runit/runsvdir/default/udevd
 
 log "Setting up bash configuration..."
 try wget https://raw.githubusercontent.com/Jipok/Cute-bash/master/.bashrc -O "/etc/bash/bashrc.d/cute-bash.sh"
@@ -204,9 +212,6 @@ try wget "https://raw.githubusercontent.com/cykerway/complete-alias/master/compl
 try wget "https://raw.githubusercontent.com/scop/bash-completion/2.11/bash_completion" -O "/etc/bash/bash-completion-2.11"
 rm "/etc/skel/.bashrc" 2>/dev/null || true
 usermod -s /bin/bash root || error "Failed to set bash as default shell"
-
-log "Setting hostname..."
-echo "$SET_HOSTNAME" > /etc/hostname
 
 if [[ ! -z "$ADD_LOCALE" ]]; then
     log "Setting locales..."
@@ -257,6 +262,7 @@ try passwd -l root
 # try xbps-remove -y sudo
 
 log "Configuring fstab..."
+# TODO autodetect
 echo "/dev/vda1 / ext4 defaults 0 1" > /etc/fstab
 
 ###############################################################################

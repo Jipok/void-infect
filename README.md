@@ -11,7 +11,6 @@ Tested on VDSina.com: Debian, Ubuntu and CentOS
 - Root access
 - SSH keys in `/root/.ssh/authorized_keys` 
 - `/dev/vda` as main disk
-- x86_64 architecture
 
 ## Usage
 ```bash
