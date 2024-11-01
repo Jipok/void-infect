@@ -22,20 +22,20 @@ log() {
 
 error() {
     echo -e "${RED}[!]${NC} $1"
-    exit 1
+    cleanup
 }
 
 try() {
     local log_file=$(mktemp)
     
     if ! eval "$@" &> "$log_file"; then
-        cat "$log_file"
         error "Failed: $@"
+        cat "$log_file"
     fi
     rm -f "$log_file"
 }
 
-POINT_OF_NO_RETURN=false
+export POINT_OF_NO_RETURN=false
 cleanup() {
     if [ "$POINT_OF_NO_RETURN" = false ]; then
         echo -e "
@@ -73,7 +73,6 @@ cleanup() {
 
 trap cleanup ERR INT TERM
 
-
 ###############################################################################
 
 # First stage, before chroot
@@ -81,8 +80,9 @@ trap cleanup ERR INT TERM
 if [ -z $VOID_INFECT_STAGE_2 ]; then
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
     [ -s /root/.ssh/authorized_keys ] || error "At least one SSH key required in root's authorized_keys"
-    [[ -e /dev/vda ]] || error "Disk /dev/vda not found"
     [[ -d /void ]] && error "Remove /void before start"
+    command -v curl >/dev/null 2>&1 || error "curl is not installed"
+    command -v findmnt >/dev/null 2>&1 || error "findmnt not found. Install util-linux"
 
     echo "
           _______ _________ ______    _________ _        _______  _______  _______ _________
@@ -113,6 +113,14 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     log "Extracting rootfs..."
     try tar xf "/void/rootfs.tar.xz" -C "/void"
     try rm "/void/rootfs.tar.xz"
+
+    log "Configuring fstab..."
+    ROOT_DEV=$(findmnt -n -o SOURCE /)
+    ROOT_FS_TYPE=$(findmnt -n -o FSTYPE /)
+    export ROOT_DISK=$(echo "$ROOT_DEV" | sed 's/[0-9]*$//')
+    [[ -e "$ROOT_DISK" ]] || error "Could not determine root disk device"
+    [[ -b "$ROOT_DISK" ]] || error "Invalid root disk device: $ROOT_DISK"
+    echo "$ROOT_DEV / $ROOT_FS_TYPE defaults 0 1" > /etc/fstab
 
     log "Copying essential files..."
     echo "$SET_HOSTNAME" > /void/etc/hostname
@@ -234,10 +242,9 @@ echo                                "# From void-infect.sh"                     
 echo                                "ip link set dev eth0 up"                            >> /etc/rc.local 
 [ -n "$ipv4_addr" ] && echo         "ip addr add $ipv4_addr dev eth0"                    >> /etc/rc.local 
 [ -n "$ipv4_gateway" ] && echo      "ip route add default via $ipv4_gateway"             >> /etc/rc.local 
-[ -n "$ipv6_addr" ] && echo         "ip -6 addr add $ipv6_addr dev eth0"                 >> /etc/rc.local 
+[ -n "$ipv6_addr" ] && echo         "ip -6 addr add $ipv6_addr dev eth0"                 >> /etc/rc.local && \
+  [ -z "$ipv6_gateway" ] && echo    "echo 1 > /proc/sys/net/ipv6/conf/eth0/accept_ra"    >> /etc/rc.local 
 [ -n "$ipv6_gateway" ] && echo      "ip -6 route add default via $ipv6_gateway"          >> /etc/rc.local 
-[ -n "$ipv6_gateway" ] || echo      "# Enable IPv6 autoconfig"                           >> /etc/rc.local 
-[ -n "$ipv6_gateway" ] || echo      "echo 1 > /proc/sys/net/ipv6/conf/eth0/accept_ra"    >> /etc/rc.local 
 echo                                ""                                                   >> /etc/rc.local 
 echo                                "rm -rf /void #VOID-INFECT-STAGE-3"                  >> /etc/rc.local 
 echo                                "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local "    >> /etc/rc.local 
@@ -261,16 +268,13 @@ try passwd -l root
 # try xbps-install -y opendoas
 # try xbps-remove -y sudo
 
-log "Configuring fstab..."
-# TODO autodetect
-echo "/dev/vda1 / ext4 defaults 0 1" > /etc/fstab
-
 ###############################################################################
 
-POINT_OF_NO_RETURN=true
+export POINT_OF_NO_RETURN=true
 
 log "Installing bootloader..."
-try grub-install /dev/vda
+sleep 4
+try grub-install "$ROOT_DISK"
 # Use traditional Linux naming scheme for interfaces
 sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 /' /etc/default/grub
 # IPv6 support
