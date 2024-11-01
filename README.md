@@ -9,8 +9,8 @@ Tested on VDSina.com: Debian, Ubuntu and CentOS
 
 ## Prerequisites
 - Root access
-- SSH keys in `/root/.ssh/authorized_keys` 
-- `/dev/vda` as main disk
+- SSH keys in `/root/.ssh/authorized_keys`
+- Installation time: ~2 minutes
 
 ## Usage
 ```bash

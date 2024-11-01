@@ -22,21 +22,22 @@ log() {
 
 error() {
     echo -e "${RED}[!]${NC} $1"
-    cleanup
+    handle_error
 }
 
 try() {
     local log_file=$(mktemp)
     
     if ! eval "$@" &> "$log_file"; then
-        error "Failed: $@"
+        echo -e "${RED}[!]${NC} Failed: $*"
         cat "$log_file"
+        handle_error
     fi
     rm -f "$log_file"
 }
 
 export POINT_OF_NO_RETURN=false
-cleanup() {
+handle_error() {
     if [ "$POINT_OF_NO_RETURN" = false ]; then
         echo -e "
 
@@ -71,7 +72,7 @@ cleanup() {
     exit 1
 }
 
-trap cleanup ERR INT TERM
+trap handle_error ERR INT TERM
 
 ###############################################################################
 
@@ -81,7 +82,6 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
     [ -s /root/.ssh/authorized_keys ] || error "At least one SSH key required in root's authorized_keys"
     [[ -d /void ]] && error "Remove /void before start"
-    command -v curl >/dev/null 2>&1 || error "curl is not installed"
     command -v findmnt >/dev/null 2>&1 || error "findmnt not found. Install util-linux"
 
     echo "
@@ -101,8 +101,15 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     try cd /void
     try mkdir -p {proc,sys,dev,run,oldroot}
 
-    log "Downloading Void Linux rootfs..."
-    try curl -fL "$VOID_LINK" -o "/void/rootfs.tar.xz"
+    log "Downloading $(basename "$VOID_LINK" .tar.xz)..."
+    if command -v curl >/dev/null 2>&1; then
+        try curl -fL "$VOID_LINK" -o "/void/rootfs.tar.xz"
+    elif command -v wget >/dev/null 2>&1; then
+        try wget -O "/void/rootfs.tar.xz" "$VOID_LINK"
+    else
+        echo "Error: Neither curl nor wget is available"
+        exit 1
+    fi
 
     log "Verifying SHA256 checksum..."
     CALCULATED_HASH=$(sha256sum "/void/rootfs.tar.xz" | cut -d' ' -f1)
@@ -142,18 +149,6 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
         cut -d' ' -f1 | \
         grep -vE '(sshd|systemd-journal|systemd-udev)' | \
         xargs -r systemctl stop >> /dev/null
-
-    # TODO  No pstree on clean debian 10
-    #
-    # log "Killing all other processes..."
-    # local ssh_pids=$(pstree -p $$ | grep -o '([0-9]\+)' | tr -d '()')
-    # for pid in $(ps -A -o pid=); do
-    #     if [ "$pid" -ne 1 ] && \
-    #         ! echo "$ssh_pids" | grep -q "^$pid$" && \
-    #         [ ! -d "/proc/$pid/task" ]; then
-    #         kill -9 "$pid" 2>/dev/null || true
-    #     fi
-    # done
 
     log "Unmounting all non-essential filesystems..."
     swapoff -a || true
@@ -255,25 +250,14 @@ sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd
 sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
 ln -sf /etc/sv/sshd /etc/runit/runsvdir/default/
 
-# log "Setting root password..."
-# echo "root:voidlinux" | chpasswd
-
 log "Disabling root password login..."
 try passwd -l root
-
-# Sudo not present in base-minimal 
-#
-# log "Removing sudo..."
-# echo "ignorepkg=sudo" > /etc/xbps.d/no-sudo.conf
-# try xbps-install -y opendoas
-# try xbps-remove -y sudo
 
 ###############################################################################
 
 export POINT_OF_NO_RETURN=true
 
 log "Installing bootloader..."
-sleep 4
 try grub-install "$ROOT_DISK"
 # Use traditional Linux naming scheme for interfaces
 sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 /' /etc/default/grub
