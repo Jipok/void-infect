@@ -68,8 +68,8 @@ handle_error() {
 ║   2. If unsure, just reinstall your system using VPS panel         ║
 ╚════════════════════════════════════════════════════════════════════╝
 "
+        bash
     fi
-    bash
     exit 1
 }
 
@@ -99,8 +99,7 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     log "Creating /void directory..."
     SCRIPT_PATH=$(readlink -f "$0")
     try mkdir -p /void
-    try cd /void
-    try mkdir -p {proc,sys,dev,run,oldroot}
+    try mkdir -p /void/{proc,sys,dev,run,oldroot}
 
     log "Downloading $(basename "$VOID_LINK" .tar.xz)..."
     if command -v curl >/dev/null 2>&1; then
@@ -128,7 +127,8 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     export ROOT_DISK=$(echo "$ROOT_DEV" | sed 's/[0-9]*$//')
     [[ -e "$ROOT_DISK" ]] || error "Could not determine root disk device"
     [[ -b "$ROOT_DISK" ]] || error "Invalid root disk device: $ROOT_DISK"
-    echo "$ROOT_DEV / $ROOT_FS_TYPE defaults 0 1" > /etc/fstab
+    # TODO Is it reely need?
+    echo "$ROOT_DEV / $ROOT_FS_TYPE defaults 0 1" >> /void/etc/fstab
 
     log "Copying essential files..."
     echo "$SET_HOSTNAME" > /void/etc/hostname
@@ -284,7 +284,12 @@ try passwd -l root
 export POINT_OF_NO_RETURN=true
 
 log "Installing bootloader..."
-try grub-install "$ROOT_DISK"
+if [ -d "/sys/firmware/efi" ]; then
+    try xbps-install -y grub-x86_64-efi efibootmgr
+    try grub-install --target=x86_64-efi --efi-directory=/boot --removable
+else
+    try grub-install "$ROOT_DISK"
+fi
 # Use traditional Linux naming scheme for interfaces
 sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 /' /etc/default/grub
 # IPv6 support
