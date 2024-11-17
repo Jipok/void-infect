@@ -194,9 +194,9 @@ try xbps-install -y man-pages mdocml ncurses iproute2 iputils traceroute ethtool
 
 log "Installing necessary packages..."
 # Utils used by scripts
-try xbps-install -y bind-utils psmisc parallel less jq unzip bc git
+try xbps-install -y bind-utils inotify-tools psmisc parallel less jq unzip bc git
 # We need it
-try xbps-install -y grub wget curl openssh bash
+try xbps-install -y grub wget curl openssh bash-completion
 
 log "Installing useful packages..."
 try xbps-install -y $ADD_PKG
@@ -232,7 +232,6 @@ log "Setting up bash configuration..."
 try wget https://raw.githubusercontent.com/Jipok/Cute-bash/master/.bashrc -O "/etc/bash/bashrc.d/cute-bash.sh"
 try wget "https://raw.githubusercontent.com/trapd00r/LS_COLORS/master/LS_COLORS" -O "/etc/bash/ls_colors"
 try wget "https://raw.githubusercontent.com/cykerway/complete-alias/master/complete_alias" -O "/etc/bash/complete_alias"
-try wget "https://raw.githubusercontent.com/scop/bash-completion/2.11/bash_completion" -O "/etc/bash/bash-completion-2.11"
 rm "/etc/skel/.bashrc" 2>/dev/null || true
 usermod -s /bin/bash root || error "Failed to set bash as default shell"
 
