@@ -4,8 +4,9 @@
 set -e  # Exit on any error
 
 
-VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20240314.tar.xz"
-VOID_HASH="9087a3e23367347a717f0bb11c2541e6abe93054a146cc3aa95545d32379b8a1"
+VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20250202.tar.xz"
+VOID_HASH="3f48e6673ac5907a897d913c97eb96edbfb230162731b4016562c51b3b8f1876"
+
 ADD_LOCALE="ru_RU.UTF-8" # Optional
 ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree neofetch"
 SET_HOSTNAME=void-vps
