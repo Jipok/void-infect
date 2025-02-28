@@ -1,4 +1,4 @@
-#!//usr/bin/env bash
+#!/usr/bin/env bash
 # void-infect: Install Void linux over the existing OS on VPS
 # Inspired by nixos-infect (https://github.com/elitak/nixos-infect)
 set -e  # Exit on any error
@@ -39,7 +39,9 @@ try() {
 }
 
 export POINT_OF_NO_RETURN=false
+export SCRIPT_STARTED=false
 handle_error() {
+    [ "$SCRIPT_STARTED" = false ] && exit 1
     if [ "$POINT_OF_NO_RETURN" = false ]; then
         echo -e "
 
@@ -85,6 +87,7 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     [ -s /root/.ssh/authorized_keys ] || error "At least one SSH key required in root's authorized_keys"
     [[ -d /void ]] && error "Remove /void before start"
     command -v findmnt >/dev/null 2>&1 || error "findmnt not found. Install util-linux"
+    export SCRIPT_STARTED=true
 
     echo "
           _______ _________ ______    _________ _        _______  _______  _______ _________
