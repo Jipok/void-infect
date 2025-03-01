@@ -6,7 +6,7 @@ Tested with Debian, Ubuntu and CentOS
 
 Tested on VDSina.com, FirstByte.pro
 
-![screenshot](https://github.com/Jipok/void-infect/blob/master/screenshot.png?raw=true)
+![screenshot](https://github.com/user-attachments/assets/bbab2376-2e5d-4bce-95bd-fe478c8b1bbc)
 
 ## Prerequisites
 - Root access
