@@ -27,5 +27,14 @@ The script automatically:
 
 No manual intervention required. Just run and wait for the reboot.
 
-## License
-MIT
+## Home Server Installation Script
+
+For installing Void Linux on a physical home server, use the alternative script:
+
+```bash
+wget https://raw.githubusercontent.com/Jipok/void-infect/refs/heads/master/void-install.sh
+chmod +x void-install.sh
+nano void-install.sh        # Change settings in file header
+./void-install.sh /dev/sdX  # Replace with your target disk
+```
+**Note: This script must be run from a LiveUSB environment or when installing to a secondary disk that's not currently hosting the running system.**
