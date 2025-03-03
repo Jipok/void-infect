@@ -28,7 +28,7 @@ The script automatically:
 
 No manual intervention required. Just run and wait for the reboot.
 
-## Home Server Installation Script
+# Home Server Edition
 
 For installing Void Linux on a physical home server, use the alternative script:
 
@@ -39,3 +39,5 @@ nano void-install.sh        # Change settings in file header
 ./void-install.sh /dev/sdX  # Replace with your target disk
 ```
 **Note: This script must be run from a LiveUSB environment or when installing to a secondary disk that's not currently hosting the running system.**
+
+![IMG_20250303_205030_651](https://github.com/user-attachments/assets/706f4e09-6054-4ca3-ad30-4d8585498f6f)
