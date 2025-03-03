@@ -2,19 +2,27 @@
 # This is a script for installing Void on a home server
 set -e  # Exit on any error
 
+#=========================================================================
+#                          CONFIGURATION
+#=========================================================================
 
 SET_HOSTNAME="void-server"
 ADD_LOCALE="ru_RU.UTF-8"  # Optional locale
 
-SWAP_GB=8            # Swap size in gigabytes; set to 0 for no swap partition
 WIFI=true            # If true, install NetworkManager (for WiFi); if false, install dhcpcd (for wired)
 SSH_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKpjScT3SXKVi36st5dpCTqacF00LJ1lKo4SXaFswC3Y Jipok"
+
+SWAPFILE_GB=AUTO     # Swapfile size in GB or AUTO (based on RAM); 0 to disable
+                     # NOTE: Using swapfile is preferred over swap partition (more flexible)
+SWAP_GB=0            # Swap partition size in gigabytes; 0 for not creating partition
 
 ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree neofetch"
 VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20250202.tar.xz"
 VOID_HASH="3f48e6673ac5907a897d913c97eb96edbfb230162731b4016562c51b3b8f1876"
 
-
+#=========================================================================
+#                       HELPER FUNCTIONS
+#=========================================================================
 
 # Colors for pretty output
 RED='\033[0;31m'
@@ -98,7 +106,6 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     [ -b "$TARGET_DISK" ] || error "Target disk $TARGET_DISK does not exist or is not a block device."
 
     # Check if the target disk has any existing partitions.
-    # English comment: List partitions on TARGET_DISK, excluding the disk itself.
     existing_partitions=$(lsblk -n -o NAME "$TARGET_DISK" | tail -n +2)
     if [ -n "$existing_partitions" ]; then
         error "Existing partitions detected on $TARGET_DISK. Remove all partitions before proceeding:
@@ -125,6 +132,9 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
         PART_PREFIX="$TARGET_DISK"
     fi
 
+    #-------------------------------------------------------------------------
+    # Disk partitioning
+    #-------------------------------------------------------------------------
     log "Partitioning disk $TARGET_DISK..."
     try parted -s "$TARGET_DISK" mklabel gpt
     try parted -s "$TARGET_DISK" mkpart ESP fat32 1MiB 513MiB
@@ -139,6 +149,9 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
         try parted -s "$TARGET_DISK" mkpart primary ext4 513MiB 100%
     fi
 
+    #-------------------------------------------------------------------------
+    # Formatting partitions
+    #-------------------------------------------------------------------------
     log "Formatting EFI partition (${PART_PREFIX}1)..."
     try mkfs.fat -F32 "${PART_PREFIX}1"
 
@@ -154,6 +167,9 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     log "Formatting root partition (${ROOT_PARTITION})..."
     try mkfs.ext4 "${ROOT_PARTITION}"
 
+    #-------------------------------------------------------------------------
+    # Mounting and setup
+    #-------------------------------------------------------------------------
     log "Mounting partitions..."
     try mount "${ROOT_PARTITION}" /mnt
     try mkdir -p /mnt/boot/efi
@@ -196,7 +212,7 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     echo "$SET_HOSTNAME" > /mnt/etc/hostname
     try cp /etc/resolv.conf /mnt/etc/resolv.conf # For working dns in stage 2
 
-    # Copy this installer script into new system for second stage.
+    # Copy this installer script into new system for second stage
     SCRIPT_PATH=$(readlink -f "$0")
     try cp "$SCRIPT_PATH" /mnt/void-install.sh
 
@@ -212,9 +228,9 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     exit 0
 fi
 
-###############################################################################
+##################################################################################
 # Second Stage: Inside chroot – System configuration, package installation, GRUB
-###############################################################################
+##################################################################################
 
 log "Updating xbps..."
 try xbps-install -Syu xbps
@@ -225,6 +241,9 @@ try xbps-install -Syu
 log "Installing base system..."
 try xbps-install -y base-system
 
+#-------------------------------------------------------------------------
+# Package Installation
+#-------------------------------------------------------------------------
 log "Installing necessary packages..."
 try xbps-install -y bind-utils inotify-tools psmisc parallel less jq unzip bc git
 try xbps-install -y grub wget curl openssh bash-completion
@@ -232,7 +251,9 @@ try xbps-install -y grub wget curl openssh bash-completion
 log "Installing additional useful packages..."
 try xbps-install -y $ADD_PKG
 
-# Network setup based on WIFI option
+#-------------------------------------------------------------------------
+# Network Configuration
+#-------------------------------------------------------------------------
 if [ "$WIFI" = true ]; then
     log "Installing WiFi network manager (NetworkManager)..."
     try xbps-install -y NetworkManager
@@ -244,6 +265,9 @@ else
     ln -sf /etc/sv/dhcpcd /etc/runit/runsvdir/default/
 fi
 
+#-------------------------------------------------------------------------
+# Cron Setup
+#-------------------------------------------------------------------------
 log "Installing simple cron (scron)..."
 try xbps-install -y scron
 ln -sf /etc/sv/crond /etc/runit/runsvdir/default/
@@ -257,6 +281,9 @@ cat > /etc/crontab <<EOF
 0 4 * * * run-parts /etc/cron.daily &>> /var/log/cron.daily.log
 EOF
 
+#-------------------------------------------------------------------------
+# Firewall Setup
+#-------------------------------------------------------------------------
 log "Installing ufw (firewall)..."
 try xbps-install -y ufw
 ln -sf /etc/sv/ufw /etc/runit/runsvdir/default/
@@ -265,6 +292,9 @@ sed -i 's/ENABLED=no/ENABLED=yes/' /etc/ufw/ufw.conf
 echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local 
 echo "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local " >> /etc/rc.local 
 
+#-------------------------------------------------------------------------
+# Shell Configuration
+#-------------------------------------------------------------------------
 log "Setting up bash configuration..."
 try wget https://raw.githubusercontent.com/Jipok/Cute-bash/master/.bashrc -O "/etc/bash/bashrc.d/cute-bash.sh"
 try wget "https://raw.githubusercontent.com/trapd00r/LS_COLORS/master/LS_COLORS" -O "/etc/bash/ls_colors"
@@ -272,12 +302,18 @@ try wget "https://raw.githubusercontent.com/cykerway/complete-alias/master/compl
 rm -f "/etc/skel/.bashrc" 2>/dev/null || true
 usermod -s /bin/bash root || error "Failed to set bash as default shell"
 
+#-------------------------------------------------------------------------
+# Locale Configuration
+#-------------------------------------------------------------------------
 if [[ -n "$ADD_LOCALE" ]]; then
     log "Setting locales..."
     sed -i "s/^# *$ADD_LOCALE/$ADD_LOCALE/" /etc/default/libc-locales
     try xbps-reconfigure -f glibc-locales
 fi
 
+#-------------------------------------------------------------------------
+# SSH Configuration
+#-------------------------------------------------------------------------
 log "Configuring SSH..."
 # Secure SSH configuration
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
@@ -293,6 +329,9 @@ sed -i '/ssh-keygen -A/d' /etc/runit/runsvdir/default//sshd/run
 try mkdir -p /root/.ssh
 echo "${SSH_KEY:-}" > /root/.ssh/authorized_keys
 
+#-------------------------------------------------------------------------
+# System Tuning - RAM based sysctl
+#-------------------------------------------------------------------------
 log "Downloading sysctl configuration..."
 try mkdir /etc/sysctl.d
 try wget "https://raw.githubusercontent.com/Jipok/void-infect/refs/heads/master/sysctl.conf" -O /etc/sysctl.d/99-default.conf
@@ -300,6 +339,7 @@ try wget "https://raw.githubusercontent.com/Jipok/void-infect/refs/heads/master/
 # Calculate total memory (in MB)
 mem_total_kb=$(grep '^MemTotal:' /proc/meminfo | awk '{print $2}')
 TOTAL_MEM=$((mem_total_kb / 1024))
+
 # Determine selected memory section based on total memory
 if [ "$TOTAL_MEM" -le 1500 ]; then
     SELECTED="MEM_1GB"
@@ -327,6 +367,37 @@ for marker in MEM_1GB MEM_2GB MEM_3-4GB MEM_5-8GB MEM_16+GB; do
     fi
 done
 
+#-------------------------------------------------------------------------
+# SWAP Configuration
+#-------------------------------------------------------------------------
+# Auto-select swap size based on available RAM
+if [ "$SWAPFILE_GB" = "AUTO" ]; then
+    if [ "$TOTAL_MEM" -le 1500 ]; then       # ~ 1 GB
+        SWAPFILE_GB=2     # 2x RAM
+    elif [ "$TOTAL_MEM" -le 2500 ]; then     # ~ 2 GB
+        SWAPFILE_GB=2     # 1x RAM
+    elif [ "$TOTAL_MEM" -le 4500 ]; then     # 3-4 GB
+        SWAPFILE_GB=4     # ~1x RAM
+    elif [ "$TOTAL_MEM" -le 11000 ]; then    # 5-8 GB
+        SWAPFILE_GB=4     # ~0.5-0.8x RAM
+    else                                     # 16+ GB
+        SWAPFILE_GB=8     # ~0.5x RAM
+    fi
+fi
+
+# Create swapfile if needed
+if [ "$SWAPFILE_GB" -gt 0 ]; then
+    log "Creating ${SWAPFILE_GB}GB swapfile..."
+    try fallocate -l ${SWAPFILE_GB}G /swapfile
+    try chmod 600 /swapfile
+    try mkswap /swapfile
+    try swapon /swapfile
+    echo "/swapfile none swap sw 0 0" >> /etc/fstab
+fi
+
+#-------------------------------------------------------------------------
+# Bootloader Installation
+#-------------------------------------------------------------------------
 log "Installing bootloader..."
 if [ -d "/sys/firmware/efi" ]; then
     try xbps-install -y grub-x86_64-efi efibootmgr
@@ -334,12 +405,16 @@ if [ -d "/sys/firmware/efi" ]; then
 else
     error "No EFI support detected. BIOS installation not implemented in this script."
 fi
+
 # Use traditional Linux naming scheme for interfaces and enable IPv6 support if needed
 sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 /' /etc/default/grub
 try update-grub
 
+#-------------------------------------------------------------------------
+# Installation Complete
+#-------------------------------------------------------------------------
 log "Installation complete"
-log "Changing root password..."
+log "Change root password:"
 passwd
 read -p "Press enter to reboot..."
 /sbin/reboot -f
