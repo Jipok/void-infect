@@ -18,8 +18,6 @@ SWAPFILE_GB=AUTO     # Swapfile size in GB or AUTO (based on RAM); 0 to disable
 SWAP_GB=0            # Swap partition size in gigabytes; 0 for not creating partition
 
 ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree neofetch"
-VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20250202.tar.xz"
-VOID_HASH="3f48e6673ac5907a897d913c97eb96edbfb230162731b4016562c51b3b8f1876"
 
 #=========================================================================
 #                       HELPER FUNCTIONS
@@ -99,6 +97,7 @@ trap handle_error ERR INT TERM
 
 if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
+    (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1) || error "This script requires either curl or wget to download files."
     command -v parted >/dev/null 2>&1 || error "parted not found. Install it"
     command -v xz >/dev/null 2>&1 || error "xz not found. Install it"
     command -v wget >/dev/null 2>&1 || command -v curl >/dev/null 2>&1 || error "Neither curl nor wget is available. Install something"
@@ -125,13 +124,23 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
    \_/   (_______)\_______/(______/ 
 "
 
-    # Determine partition naming scheme.
-    # If disk name contains "nvme", partitions use 'p' separator (e.g. /dev/nvme0n1p1)
-    if [[ "$TARGET_DISK" =~ nvme ]]; then
-        PART_PREFIX="${TARGET_DISK}p"
-    else
-        PART_PREFIX="$TARGET_DISK"
+    log "Fetching the latest image information..."
+    if command -v curl >/dev/null 2>&1; then
+        IMAGE_INFO=$(curl -s https://repo-default.voidlinux.org/live/current/sha256sum.txt | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
+    elif command -v wget >/dev/null 2>&1; then
+        IMAGE_INFO=$(wget -qO- https://repo-default.voidlinux.org/live/current/sha256sum.txt | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
     fi
+    [ -n "$IMAGE_INFO" ] || error "Could not find image info in sha256sum.txt"
+
+    # Parse filename, link and hash from the fetched info
+    VOID_FILENAME=$(echo "$IMAGE_INFO" | sed -n 's/.*(\(.*\)).*/\1/p')
+    [ -n "$VOID_FILENAME" ] || error "Could not parse filename from image info."
+    VOID_LINK="https://repo-default.voidlinux.org/live/current/$VOID_FILENAME"
+    VOID_HASH=$(echo "$IMAGE_INFO" | awk '{print $4}')
+    [ -n "$VOID_HASH" ] || error "Could not parse hash from image info."
+
+    # VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20250202.tar.xz"
+    # VOID_HASH="3f48e6673ac5907a897d913c97eb96edbfb230162731b4016562c51b3b8f1876"
 
     #-------------------------------------------------------------------------
     # Disk partitioning
@@ -153,6 +162,15 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     #-------------------------------------------------------------------------
     # Formatting partitions
     #-------------------------------------------------------------------------
+
+    # Determine partition naming scheme.
+    # If disk name contains "nvme", partitions use 'p' separator (e.g. /dev/nvme0n1p1)
+    if [[ "$TARGET_DISK" =~ nvme ]]; then
+        PART_PREFIX="${TARGET_DISK}p"
+    else
+        PART_PREFIX="$TARGET_DISK"
+    fi
+
     log "Formatting EFI partition (${PART_PREFIX}1)..."
     try mkfs.fat -F32 "${PART_PREFIX}1"
 
@@ -181,8 +199,6 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
         try curl -fL "$VOID_LINK" -o "/mnt/rootfs.tar.xz"
     elif command -v wget >/dev/null 2>&1; then
         try wget -O "/mnt/rootfs.tar.xz" "$VOID_LINK"
-    else
-        error "Neither curl nor wget is available."
     fi
 
     log "Verifying SHA256 checksum of rootfs..."

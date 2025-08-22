@@ -4,9 +4,6 @@
 set -e  # Exit on any error
 
 
-VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20250202.tar.xz"
-VOID_HASH="3f48e6673ac5907a897d913c97eb96edbfb230162731b4016562c51b3b8f1876"
-
 ADD_LOCALE="ru_RU.UTF-8" # Optional
 ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree neofetch"
 SET_HOSTNAME=void-vps
@@ -14,6 +11,7 @@ SET_HOSTNAME=void-vps
 # Time on VPS can drift. Installing an NTP client is highly recommended
 # to keep the system time accurate. Set to 'false' to disable.
 INSTALL_NTP=true
+
 
 
 # Colors for pretty output
@@ -90,6 +88,7 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
     [ -s /root/.ssh/authorized_keys ] || error "At least one SSH key required in root's authorized_keys"
     [[ -d /void ]] && error "Remove /void before start"
+    (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1) || error "This script requires either curl or wget to download files."
     command -v findmnt >/dev/null 2>&1 || error "findmnt not found. Install util-linux"
     export SCRIPT_STARTED=true
 
@@ -104,6 +103,24 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
    \_/   (_______)\_______/(______/   \_______/|/    )_)|/       (_______/(_______/   )_(   
 "
 
+    log "Fetching the latest image information..."
+    if command -v curl >/dev/null 2>&1; then
+        IMAGE_INFO=$(curl -s https://repo-default.voidlinux.org/live/current/sha256sum.txt | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
+    elif command -v wget >/dev/null 2>&1; then
+        IMAGE_INFO=$(wget -qO- https://repo-default.voidlinux.org/live/current/sha256sum.txt | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
+    fi
+    [ -n "$IMAGE_INFO" ] || error "Could not find image info in sha256sum.txt"
+
+    # Parse filename, link and hash from the fetched info
+    VOID_FILENAME=$(echo "$IMAGE_INFO" | sed -n 's/.*(\(.*\)).*/\1/p')
+    [ -n "$VOID_FILENAME" ] || error "Could not parse filename from image info."
+    VOID_LINK="https://repo-default.voidlinux.org/live/current/$VOID_FILENAME"
+    VOID_HASH=$(echo "$IMAGE_INFO" | awk '{print $4}')
+    [ -n "$VOID_HASH" ] || error "Could not parse hash from image info."
+
+    # VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20250202.tar.xz"
+    # VOID_HASH="3f48e6673ac5907a897d913c97eb96edbfb230162731b4016562c51b3b8f1876"
+
     log "Creating /void directory..."
     SCRIPT_PATH=$(readlink -f "$0")
     try mkdir -p /void
@@ -114,9 +131,6 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
         try curl -fL "$VOID_LINK" -o "/void/rootfs.tar.xz"
     elif command -v wget >/dev/null 2>&1; then
         try wget -O "/void/rootfs.tar.xz" "$VOID_LINK"
-    else
-        echo "Error: Neither curl nor wget is available"
-        exit 1
     fi
 
     log "Verifying SHA256 checksum..."
