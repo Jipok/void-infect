@@ -8,6 +8,7 @@ set -e  # Exit on any error
 
 SET_HOSTNAME="void-server"
 ADD_LOCALE="ru_RU.UTF-8"  # Optional locale
+INSTALL_NTP=true
 
 WIFI=true            # If true, install NetworkManager (for WiFi); if false, install dhcpcd (for wired)
 SSH_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKpjScT3SXKVi36st5dpCTqacF00LJ1lKo4SXaFswC3Y Jipok"
@@ -263,6 +264,15 @@ else
     log "Installing DHCP client (dhcpcd)..."
     try xbps-install -y dhcpcd
     ln -sf /etc/sv/dhcpcd /etc/runit/runsvdir/default/
+fi
+
+#-------------------------------------------------------------------------
+# NTP (Time Sync) Setup
+#-------------------------------------------------------------------------
+if [ "$INSTALL_NTP" = true ]; then
+    log "Installing NTP client (openntpd)..."
+    try xbps-install -y openntpd
+    ln -sf /etc/sv/openntpd /etc/runit/runsvdir/default/
 fi
 
 #-------------------------------------------------------------------------

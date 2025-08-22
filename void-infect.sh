@@ -11,6 +11,10 @@ ADD_LOCALE="ru_RU.UTF-8" # Optional
 ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree neofetch"
 SET_HOSTNAME=void-vps
 
+# Time on VPS can drift. Installing an NTP client is highly recommended
+# to keep the system time accurate. Set to 'false' to disable.
+INSTALL_NTP=true
+
 
 # Colors for pretty output
 RED='\033[0;31m'
@@ -204,6 +208,12 @@ try xbps-install -y grub wget curl openssh bash-completion
 
 log "Installing useful packages..."
 try xbps-install -y $ADD_PKG
+
+if [ "$INSTALL_NTP" = true ]; then
+    log "Installing NTP client (openntpd)..."
+    try xbps-install -y openntpd
+    ln -sf /etc/sv/openntpd /etc/runit/runsvdir/default/
+fi
 
 log "Installing simple cron..."
 try xbps-install -y scron
