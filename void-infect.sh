@@ -3,16 +3,24 @@
 # Inspired by nixos-infect (https://github.com/elitak/nixos-infect)
 set -e  # Exit on any error
 
+#=========================================================================
+#                          CONFIGURATION
+#=========================================================================
 
+SET_HOSTNAME="void-vps"
 ADD_LOCALE="ru_RU.UTF-8" # Optional
 ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree neofetch"
-SET_HOSTNAME=void-vps
 
 # Time on VPS can drift. Installing an NTP client is highly recommended
 # to keep the system time accurate. Set to 'false' to disable.
 INSTALL_NTP=true
 
+# Swapfile size in GB or AUTO (based on RAM); 0 to disable
+SWAPFILE_GB=AUTO
 
+#=========================================================================
+#                       HELPER FUNCTIONS
+#=========================================================================
 
 # Colors for pretty output
 RED='\033[0;31m'
@@ -339,6 +347,35 @@ for marker in MEM_1GB MEM_2GB MEM_3-4GB MEM_5-8GB MEM_16+GB; do
          sed -i "/# --- END $marker/d" /etc/sysctl.d/99-default.conf
     fi
 done
+
+#-------------------------------------------------------------------------
+# SWAP Configuration
+#-------------------------------------------------------------------------
+# Auto-select swap size based on available RAM
+SWAPFILE_GB="AUTO" # Define this variable for swap logic
+if [ "$SWAPFILE_GB" = "AUTO" ]; then
+    if [ "$TOTAL_MEM" -le 1500 ]; then       # ~ 1 GB
+        SWAPFILE_GB=2     # 2x RAM
+    elif [ "$TOTAL_MEM" -le 2500 ]; then     # ~ 2 GB
+        SWAPFILE_GB=2     # 1x RAM
+    elif [ "$TOTAL_MEM" -le 4500 ]; then     # 3-4 GB
+        SWAPFILE_GB=4     # ~1x RAM
+    elif [ "$TOTAL_MEM" -le 11000 ]; then    # 5-8 GB
+        SWAPFILE_GB=4     # ~0.5-0.8x RAM
+    else                                     # 16+ GB
+        SWAPFILE_GB=8     # ~0.5x RAM
+    fi
+fi
+
+# Create swapfile if needed
+if [ "$SWAPFILE_GB" -gt 0 ]; then
+    log "Creating ${SWAPFILE_GB}GB swapfile..."
+    try fallocate -l ${SWAPFILE_GB}G /swapfile
+    try chmod 600 /swapfile
+    try mkswap /swapfile
+    try swapon /swapfile
+    echo "/swapfile none swap sw 0 0" >> /etc/fstab
+fi
 
 ###############################################################################
 
