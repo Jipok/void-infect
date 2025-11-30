@@ -198,7 +198,9 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     try mount --bind /sys /void/sys
 
     log "Entering chroot..."
-    env VOID_INFECT_STAGE_2=y chroot /void /void-infect.sh
+    if ! env VOID_INFECT_STAGE_2=y chroot /void /void-infect.sh; then
+        exit 1
+    fi
 
     exit 0
 fi
@@ -206,6 +208,7 @@ fi
 ###############################################################################
 
 # Second stage, inside chroot
+export SCRIPT_STARTED=true
 
 log "Updating xbps..."
 try xbps-install -Syu xbps
