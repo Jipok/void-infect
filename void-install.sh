@@ -17,7 +17,7 @@ SWAPFILE_GB=AUTO     # Swapfile size in GB or AUTO (based on RAM); 0 to disable
                      # NOTE: Using swapfile is preferred over swap partition (more flexible)
 SWAP_GB=0            # Swap partition size in gigabytes; 0 for not creating partition
 
-ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree neofetch"
+ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree fastfetch"
 
 #=========================================================================
 #                       HELPER FUNCTIONS

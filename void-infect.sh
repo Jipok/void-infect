@@ -9,7 +9,7 @@ set -e  # Exit on any error
 
 SET_HOSTNAME="void-vps"
 ADD_LOCALE="ru_RU.UTF-8" # Optional
-ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree neofetch"
+ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree fastfetch"
 
 # Time on VPS can drift. Installing an NTP client is highly recommended
 # to keep the system time accurate. Set to 'false' to disable.
