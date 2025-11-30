@@ -449,5 +449,6 @@ echo -e "
 ║ Verify the fingerprint when connecting!                            ║
 ╚════════════════════════════════════════════════════════════════════╝
 "
+sleep 1
 
 /sbin/reboot -f
