@@ -297,10 +297,17 @@ echo                                ""                                          
 echo                                "# From void-infect.sh"                              >> /etc/rc.local
 echo                                "ip link set dev eth0 up"                            >> /etc/rc.local
 [ -n "$ipv4_addr" ] && echo         "ip addr add $ipv4_addr dev eth0"                    >> /etc/rc.local
-[ -n "$ipv4_gateway" ] && echo      "ip route add default via $ipv4_gateway"             >> /etc/rc.local
+# Explicitly add route to gateway first (required for /32 masks and onlink gateways)
+if [ -n "$ipv4_gateway" ]; then
+    echo                            "ip route add $ipv4_gateway dev eth0"                >> /etc/rc.local
+    echo                            "ip route add default via $ipv4_gateway"             >> /etc/rc.local
+fi
 [ -n "$ipv6_addr" ] && echo         "ip -6 addr add $ipv6_addr dev eth0"                 >> /etc/rc.local && \
   [ -z "$ipv6_gateway" ] && echo    "echo 1 > /proc/sys/net/ipv6/conf/eth0/accept_ra"    >> /etc/rc.local
-[ -n "$ipv6_gateway" ] && echo      "ip -6 route add default via $ipv6_gateway"          >> /etc/rc.local
+if [ -n "$ipv6_gateway" ]; then
+    echo                            "ip -6 route add $ipv6_gateway dev eth0"             >> /etc/rc.local
+    echo                            "ip -6 route add default via $ipv6_gateway"          >> /etc/rc.local
+fi
 echo                                ""                                                   >> /etc/rc.local
 echo                                "rm -rf /void #VOID-INFECT-STAGE-3"                  >> /etc/rc.local
 echo                                "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local "    >> /etc/rc.local
