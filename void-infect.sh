@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # void-infect: Install Void linux over the existing OS on VPS
-# Inspired by nixos-infect (https://github.com/elitak/nixos-infect)
-set -e  # Exit on any error
+set -e
 
 #=========================================================================
 #                          CONFIGURATION
@@ -39,7 +38,7 @@ error() {
 
 try() {
     local log_file=$(mktemp)
-    
+
     if ! eval "$@" &> "$log_file"; then
         echo -e "${RED}[!]${NC} Failed: $*"
         cat "$log_file"
@@ -103,12 +102,12 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     echo "
           _______ _________ ______    _________ _        _______  _______  _______ _________
 |\     /|(  ___  )\__   __/(  __  \   \__   __/( (    /|(  ____ \(  ____ \(  ____ \\__   __/
-| )   ( || (   ) |   ) (   | (  \  )     ) (   |  \  ( || (    \/| (    \/| (    \/   ) (   
-| |   | || |   | |   | |   | |   ) |     | |   |   \ | || (__    | (__    | |         | |   
-( (   ) )| |   | |   | |   | |   | |     | |   | (\ \) ||  __)   |  __)   | |         | |   
- \ \_/ / | |   | |   | |   | |   ) |     | |   | | \   || (      | (      | |         | |   
-  \   /  | (___) |___) (___| (__/  )  ___) (___| )  \  || )      | (____/\| (____/\   | |   
-   \_/   (_______)\_______/(______/   \_______/|/    )_)|/       (_______/(_______/   )_(   
+| )   ( || (   ) |   ) (   | (  \  )     ) (   |  \  ( || (    \/| (    \/| (    \/   ) (
+| |   | || |   | |   | |   | |   ) |     | |   |   \ | || (__    | (__    | |         | |
+( (   ) )| |   | |   | |   | |   | |     | |   | (\ \) ||  __)   |  __)   | |         | |
+ \ \_/ / | |   | |   | |   | |   ) |     | |   | | \   || (      | (      | |         | |
+  \   /  | (___) |___) (___| (__/  )  ___) (___| )  \  || )      | (____/\| (____/\   | |
+   \_/   (_______)\_______/(______/   \_______/|/    )_)|/       (_______/(_______/   )_(
 "
 
     log "Fetching the latest image information..."
@@ -257,7 +256,7 @@ log "Installing ufw..."
 try xbps-install -y ufw
 ln -sf /etc/sv/ufw /etc/runit/runsvdir/default/
 sed -i 's/ENABLED=no/ENABLED=yes/' /etc/ufw/ufw.conf
-echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local 
+echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local
 
 log "Disabling unused services (agetty, udev)..."
 xbps-remove -Oo
@@ -287,17 +286,17 @@ ipv4_gateway=$(ip route show default | head -n1 | awk '{print $3}')
 ipv6_addr=$(ip -6 addr show dev "$interface" | grep 'inet6' | grep -v 'fe80' | awk '{print $2}')
 ipv6_gateway=$(ip -6 route show default | head -n1 | awk '{print $3}')
 #
-echo                                ""                                                   >> /etc/rc.local 
-echo                                "# From void-infect.sh"                              >> /etc/rc.local 
-echo                                "ip link set dev eth0 up"                            >> /etc/rc.local 
-[ -n "$ipv4_addr" ] && echo         "ip addr add $ipv4_addr dev eth0"                    >> /etc/rc.local 
-[ -n "$ipv4_gateway" ] && echo      "ip route add default via $ipv4_gateway"             >> /etc/rc.local 
+echo                                ""                                                   >> /etc/rc.local
+echo                                "# From void-infect.sh"                              >> /etc/rc.local
+echo                                "ip link set dev eth0 up"                            >> /etc/rc.local
+[ -n "$ipv4_addr" ] && echo         "ip addr add $ipv4_addr dev eth0"                    >> /etc/rc.local
+[ -n "$ipv4_gateway" ] && echo      "ip route add default via $ipv4_gateway"             >> /etc/rc.local
 [ -n "$ipv6_addr" ] && echo         "ip -6 addr add $ipv6_addr dev eth0"                 >> /etc/rc.local && \
-  [ -z "$ipv6_gateway" ] && echo    "echo 1 > /proc/sys/net/ipv6/conf/eth0/accept_ra"    >> /etc/rc.local 
-[ -n "$ipv6_gateway" ] && echo      "ip -6 route add default via $ipv6_gateway"          >> /etc/rc.local 
-echo                                ""                                                   >> /etc/rc.local 
-echo                                "rm -rf /void #VOID-INFECT-STAGE-3"                  >> /etc/rc.local 
-echo                                "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local "    >> /etc/rc.local 
+  [ -z "$ipv6_gateway" ] && echo    "echo 1 > /proc/sys/net/ipv6/conf/eth0/accept_ra"    >> /etc/rc.local
+[ -n "$ipv6_gateway" ] && echo      "ip -6 route add default via $ipv6_gateway"          >> /etc/rc.local
+echo                                ""                                                   >> /etc/rc.local
+echo                                "rm -rf /void #VOID-INFECT-STAGE-3"                  >> /etc/rc.local
+echo                                "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local "    >> /etc/rc.local
 
 log "Configuring SSH..."
 # Secure SSH configuration
@@ -341,10 +340,10 @@ log "Applying sysctl configuration for $SELECTED_PRETTY RAM"
 # Remove unselected memory markers from the sysctl configuration
 for marker in MEM_1GB MEM_2GB MEM_3-4GB MEM_5-8GB MEM_16+GB; do
     if [ "$marker" != "$SELECTED" ]; then
-         sed -i "/# --- BEGIN $marker/,/# --- END $marker/d" /etc/sysctl.d/99-default.conf
+        sed -i "/# --- BEGIN $marker/,/# --- END $marker/d" /etc/sysctl.d/99-default.conf
     else
-         sed -i "/# --- BEGIN $marker/d" /etc/sysctl.d/99-default.conf
-         sed -i "/# --- END $marker/d" /etc/sysctl.d/99-default.conf
+        sed -i "/# --- BEGIN $marker/d" /etc/sysctl.d/99-default.conf
+        sed -i "/# --- END $marker/d" /etc/sysctl.d/99-default.conf
     fi
 done
 
@@ -386,7 +385,9 @@ if [ -d "/sys/firmware/efi" ]; then
     try xbps-install -y grub-x86_64-efi efibootmgr
     try grub-install --target=x86_64-efi --efi-directory=/boot --removable
 else
-    try grub-install "$ROOT_DISK"
+    # Use --force to allow blocklists on GPT disks booting in BIOS mode.
+    # This is required for VPS providers that use GPT without a BIOS Boot Partition.
+    try grub-install --force "$ROOT_DISK"
 fi
 # Use traditional Linux naming scheme for interfaces
 sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 /' /etc/default/grub
