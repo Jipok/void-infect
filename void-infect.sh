@@ -153,7 +153,11 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     log "Configuring fstab..."
     ROOT_DEV=$(findmnt -n -o SOURCE /)
     ROOT_FS_TYPE=$(findmnt -n -o FSTYPE /)
-    export ROOT_DISK=$(echo "$ROOT_DEV" | sed 's/[0-9]*$//')
+    if [[ "$ROOT_DEV" =~ "nvme" ]]; then
+        export ROOT_DISK=$(echo "$ROOT_DEV" | sed -E 's/p[0-9]+$//')
+    else
+        export ROOT_DISK=$(echo "$ROOT_DEV" | sed 's/[0-9]*$//')
+    fi
     [[ -e "$ROOT_DISK" ]] || error "Could not determine root disk device"
     [[ -b "$ROOT_DISK" ]] || error "Invalid root disk device: $ROOT_DISK"
     # TODO Is it reely need?
