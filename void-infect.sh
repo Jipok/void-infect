@@ -93,11 +93,13 @@ trap handle_error ERR INT TERM
 
 if [ -z $VOID_INFECT_STAGE_2 ]; then
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
-    [ -s /root/.ssh/authorized_keys ] || error "At least one SSH key required in root's authorized_keys"
     [[ -d /void ]] && error "Remove /void before start"
     (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1) || error "This script requires either curl or wget to download files."
     command -v findmnt >/dev/null 2>&1 || error "findmnt not found. Install util-linux"
-    export SCRIPT_STARTED=true
+    GITHUB_USER="$1"
+    if [ -z "$GITHUB_USER" ] && [ ! -s /root/.ssh/authorized_keys ]; then
+        error "No SSH keys found in /root/.ssh/authorized_keys. Provide a GitHub username as argument or add keys locally."
+    fi
 
     echo "
           _______ _________ ______    _________ _        _______  _______  _______ _________
@@ -109,6 +111,31 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
   \   /  | (___) |___) (___| (__/  )  ___) (___| )  \  || )      | (____/\| (____/\   | |
    \_/   (_______)\_______/(______/   \_______/|/    )_)|/       (_______/(_______/   )_(
 "
+
+    # Prepare SSH keys source
+    SSH_KEYS_SOURCE="/root/.ssh/authorized_keys"
+    if [ -n "$GITHUB_USER" ]; then
+        log "Fetching SSH keys from GitHub for user: $GITHUB_USER"
+        SSH_KEYS_SOURCE=$(mktemp)
+        KEYS_URL="https://github.com/${GITHUB_USER}.keys"
+
+        if command -v curl >/dev/null 2>&1; then
+            if ! curl -fsL "$KEYS_URL" -o "$SSH_KEYS_SOURCE"; then
+                rm "$SSH_KEYS_SOURCE"
+                error "Failed to fetch keys for '$GITHUB_USER'. User not found or network error."
+            fi
+        else
+            if ! wget -qO "$SSH_KEYS_SOURCE" "$KEYS_URL"; then
+                rm "$SSH_KEYS_SOURCE"
+                error "Failed to fetch keys for '$GITHUB_USER'. User not found or network error."
+            fi
+        fi
+
+        if [ ! -s "$SSH_KEYS_SOURCE" ]; then
+            rm "$SSH_KEYS_SOURCE"
+            error "Downloaded key file is empty. Does '$GITHUB_USER' have public keys on GitHub?"
+        fi
+    fi
 
     log "Fetching the latest image information..."
     if command -v curl >/dev/null 2>&1; then
@@ -125,8 +152,7 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     VOID_HASH=$(echo "$IMAGE_INFO" | awk '{print $4}')
     [ -n "$VOID_HASH" ] || error "Could not parse hash from image info."
 
-    # VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20250202.tar.xz"
-    # VOID_HASH="3f48e6673ac5907a897d913c97eb96edbfb230162731b4016562c51b3b8f1876"
+    export SCRIPT_STARTED=true
 
     log "Creating /void directory..."
     SCRIPT_PATH=$(readlink -f "$0")
@@ -169,7 +195,7 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     cp "$SCRIPT_PATH" /void/void-infect.sh
     # ssh
     mkdir -p /void/root/.ssh
-    try cp -r /root/.ssh/authorized_keys /void/root/.ssh/
+    try cp "$SSH_KEYS_SOURCE" /void/root/.ssh/authorized_keys
     chmod 700 /void/root/.ssh
     chmod 600 /void/root/.ssh/authorized_keys
     # Extract DNS servers, replace localhost with 1.1.1.1

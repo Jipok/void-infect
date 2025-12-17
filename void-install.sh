@@ -11,7 +11,6 @@ ADD_LOCALE="ru_RU.UTF-8"  # Optional locale
 INSTALL_NTP=true
 
 WIFI=true            # If true, install NetworkManager (for WiFi); if false, install dhcpcd (for wired)
-SSH_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKpjScT3SXKVi36st5dpCTqacF00LJ1lKo4SXaFswC3Y Jipok"
 
 SWAPFILE_GB=AUTO     # Swapfile size in GB or AUTO (based on RAM); 0 to disable
                      # NOTE: Using swapfile is preferred over swap partition (more flexible)
@@ -29,6 +28,8 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+SSH_KEY="${SSH_KEY:-}"
+
 # Logging functions
 log() {
     echo -e "${GREEN}[+]${NC} $1"
@@ -42,7 +43,7 @@ error() {
 try() {
     local log_file
     log_file=$(mktemp)
-    
+
     if ! eval "$@" &> "$log_file"; then
         echo -e "${RED}[!]${NC} Failed: $*"
         cat "$log_file"
@@ -114,15 +115,50 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
 
     export SCRIPT_STARTED=true
     echo "
-          _______ _________ ______  
-|\     /|(  ___  )\__   __/(  __  \ 
+          _______ _________ ______
+|\     /|(  ___  )\__   __/(  __  \
 | )   ( || (   ) |   ) (   | (  \  )
 | |   | || |   | |   | |   | |   ) |
 ( (   ) )| |   | |   | |   | |   | |
  \ \_/ / | |   | |   | |   | |   ) |
   \   /  | (___) |___) (___| (__/  )
-   \_/   (_______)\_______/(______/ 
+   \_/   (_______)\_______/(______/
 "
+
+    # Process SSH Key argument (Username or Raw Key)
+    SSH_ARG="$2"
+    if [ -n "$SSH_ARG" ]; then
+        if [[ "$SSH_ARG" == ssh-* ]]; then
+            log "Using provided raw SSH key."
+            SSH_KEY="$SSH_ARG"
+        else
+            log "Fetching SSH keys from GitHub for user: $SSH_ARG"
+            KEYS_URL="https://github.com/${SSH_ARG}.keys"
+            TEMP_KEYS=$(mktemp)
+
+            if command -v curl >/dev/null 2>&1; then
+                curl -fsL "$KEYS_URL" -o "$TEMP_KEYS" || error "Failed to fetch keys for '$SSH_ARG'"
+            else
+                wget -qO "$TEMP_KEYS" "$KEYS_URL" || error "Failed to fetch keys for '$SSH_ARG'"
+            fi
+
+            if [ -s "$TEMP_KEYS" ]; then
+                SSH_KEY=$(cat "$TEMP_KEYS")
+                rm "$TEMP_KEYS"
+                log "Successfully fetched keys for $SSH_ARG"
+            else
+                rm "$TEMP_KEYS"
+                error "No keys found for GitHub user '$SSH_ARG'"
+            fi
+        fi
+    fi
+
+    # Check if we have any key at all
+    if [ -z "$SSH_KEY" ]; then
+        echo -e "${RED}[WARNING]${NC} No SSH key provided (via config or argument). Login via SSH will be impossible."
+        echo "Waiting 7 seconds..."
+        sleep 7
+    fi
 
     log "Fetching the latest image information..."
     if command -v curl >/dev/null 2>&1; then
@@ -240,7 +276,7 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     try mount --bind /run /mnt/run
 
     log "Entering chroot for second stage installation..."
-    env VOID_INSTALL_STAGE_2=y chroot /mnt /void-install.sh
+    env VOID_INSTALL_STAGE_2=y SSH_KEY="$SSH_KEY" chroot /mnt /void-install.sh
 
     exit 0
 fi
@@ -315,8 +351,8 @@ try xbps-install -y ufw
 ln -sf /etc/sv/ufw /etc/runit/runsvdir/default/
 sed -i 's/ENABLED=no/ENABLED=yes/' /etc/ufw/ufw.conf
 #
-echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local 
-echo "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local " >> /etc/rc.local 
+echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local
+echo "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local " >> /etc/rc.local
 
 #-------------------------------------------------------------------------
 # Shell Configuration
@@ -353,7 +389,8 @@ cp -r /etc/sv/sshd /etc/runit/runsvdir/default/
 sed -i '/ssh-keygen -A/d' /etc/runit/runsvdir/default//sshd/run
 # Set key
 try mkdir -p /root/.ssh
-echo "${SSH_KEY:-}" > /root/.ssh/authorized_keys
+try chmod 700 /root/.ssh
+echo "$SSH_KEY" > /root/.ssh/authorized_keys
 
 #-------------------------------------------------------------------------
 # System Tuning - RAM based sysctl
