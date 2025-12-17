@@ -116,7 +116,7 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     export SCRIPT_STARTED=true
     echo "
           _______ _________ ______
-|\     /|(  ___  )\__   __/(  __  \
+|\     /|(  ___  )\__   __/(  __  \\
 | )   ( || (   ) |   ) (   | (  \  )
 | |   | || |   | |   | |   | |   ) |
 ( (   ) )| |   | |   | |   | |   | |
@@ -145,7 +145,6 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
             if [ -s "$TEMP_KEYS" ]; then
                 SSH_KEY=$(cat "$TEMP_KEYS")
                 rm "$TEMP_KEYS"
-                log "Successfully fetched keys for $SSH_ARG"
             else
                 rm "$TEMP_KEYS"
                 error "No keys found for GitHub user '$SSH_ARG'"
@@ -477,7 +476,23 @@ try update-grub
 # Installation Complete
 #-------------------------------------------------------------------------
 log "Installation complete"
+
 log "Change root password:"
-passwd
-read -p "Press enter to reboot..."
-/sbin/reboot -f
+if ! passwd; then
+    echo -e "${RED}[WARNING]${NC} Password change failed or was skipped."
+    echo -e "The root password defaults to: ${BLUE}voidlinux${NC}"
+fi
+
+echo -e "
+╔════════════════════════════════════════════════════════════════════╗
+║                   INSTALLATION SUCCESSFUL                          ║
+╠════════════════════════════════════════════════════════════════════╣
+║ You are now inside a shell in your new system.                     ║
+║                                                                    ║
+║ 1. You can install extra packages (xbps-install ...)               ║
+║ 2. Check configs in /etc/                                          ║
+║ 3. Type 'exit' to leave chroot and return to the Live environment  ║
+╚════════════════════════════════════════════════════════════════════╝
+"
+
+/bin/bash
