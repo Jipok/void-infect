@@ -97,8 +97,10 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1) || error "This script requires either curl or wget to download files."
     command -v findmnt >/dev/null 2>&1 || error "findmnt not found. Install util-linux"
     GITHUB_USER="$1"
-    if [ -z "$GITHUB_USER" ] && [ ! -s /root/.ssh/authorized_keys ]; then
-        error "No SSH keys found in /root/.ssh/authorized_keys. Provide a GitHub username as argument or add keys locally."
+    if [ -z "$GITHUB_USER" ]; then
+        if [ ! -f /root/.ssh/authorized_keys ] || ! grep -q "[^[:space:]]" /root/.ssh/authorized_keys; then
+            error "No valid SSH keys found in /root/.ssh/authorized_keys. Provide a GitHub username as argument or add keys locally."
+        fi
     fi
 
     echo "
