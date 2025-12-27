@@ -18,6 +18,9 @@ SWAP_GB=0            # Swap partition size in gigabytes; 0 for not creating part
 
 ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree fastfetch void-repo-nonfree"
 
+USE_JIPOK_REPO=true
+ADD_PKG2="cute-bash jsysctl"
+
 #=========================================================================
 #                       HELPER FUNCTIONS
 #=========================================================================
@@ -35,11 +38,16 @@ log() {
     echo -e "${GREEN}[+]${NC} $1"
 }
 
+warn() {
+    echo -e "${YELLOW}[!]${NC} $1"
+}
+
 error() {
     echo -e "${RED}[!]${NC} $1"
     handle_error
 }
 
+# Critical try: exits script on failure
 try() {
     local log_file
     log_file=$(mktemp)
@@ -50,6 +58,20 @@ try() {
         handle_error
     fi
     rm -f "$log_file"
+}
+
+# Soft try: warns on failure but continues execution
+try_soft() {
+    local log_file=$(mktemp)
+
+    if ! eval "$@" &> "$log_file"; then
+        echo -e "${YELLOW}[!] Optional step failed: $*${NC}"
+        cat "$log_file"
+        rm -f "$log_file"
+        return 1
+    fi
+    rm -f "$log_file"
+    return 0
 }
 
 export SCRIPT_STARTED=false
@@ -305,6 +327,33 @@ try xbps-install -y grub wget curl openssh bash-completion
 log "Installing additional useful packages..."
 try xbps-install -y $ADD_PKG
 
+if [ "$USE_JIPOK_REPO" = true ]; then
+    log "Setting up custom repository..."
+
+    if try_soft wget --content-disposition -P /var/db/xbps/keys/ https://void-repo.jipok.ru/key; then
+        echo "repository=https://void-repo.jipok.ru" > /etc/xbps.d/10-vur-Jipok.conf
+
+        # Update index to verify connection
+        if try_soft xbps-install -S; then
+            CUSTOM_REPO_READY=true
+        else
+            warn "Failed to sync custom repository. Removing config."
+            rm -f /etc/xbps.d/10-vur-Jipok.conf
+        fi
+    else
+        warn "Failed to download custom repository key. Skipping."
+    fi
+fi
+
+if [ -n "$ADD_PKG2" ]; then
+    if [ "$CUSTOM_REPO_READY" = true ]; then
+        log "Installing packages from void-repo.jipok.ru..."
+        try_soft xbps-install -y $ADD_PKG2
+    else
+        warn "Skipping installation: $ADD_PKG2"
+    fi
+fi
+
 #-------------------------------------------------------------------------
 # Network Configuration
 #-------------------------------------------------------------------------
@@ -356,16 +405,6 @@ echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local
 echo "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local " >> /etc/rc.local
 
 #-------------------------------------------------------------------------
-# Shell Configuration
-#-------------------------------------------------------------------------
-log "Setting up bash configuration..."
-try wget https://raw.githubusercontent.com/Jipok/Cute-bash/master/.bashrc -O "/etc/bash/bashrc.d/cute-bash.sh"
-try wget "https://raw.githubusercontent.com/trapd00r/LS_COLORS/master/LS_COLORS" -O "/etc/bash/ls_colors"
-try wget "https://raw.githubusercontent.com/cykerway/complete-alias/master/complete_alias" -O "/etc/bash/complete_alias"
-rm -f "/etc/skel/.bashrc" 2>/dev/null || true
-usermod -s /bin/bash root || error "Failed to set bash as default shell"
-
-#-------------------------------------------------------------------------
 # Locale Configuration
 #-------------------------------------------------------------------------
 if [[ -n "$ADD_LOCALE" ]]; then
@@ -394,46 +433,12 @@ try chmod 700 /root/.ssh
 echo "$SSH_KEY" > /root/.ssh/authorized_keys
 
 #-------------------------------------------------------------------------
-# System Tuning - RAM based sysctl
+# SWAP Configuration
 #-------------------------------------------------------------------------
-log "Downloading sysctl configuration..."
-try mkdir /etc/sysctl.d
-try wget "https://raw.githubusercontent.com/Jipok/void-infect/refs/heads/master/sysctl.conf" -O /etc/sysctl.d/99-default.conf
-
 # Calculate total memory (in MB)
 mem_total_kb=$(grep '^MemTotal:' /proc/meminfo | awk '{print $2}')
 TOTAL_MEM=$((mem_total_kb / 1024))
 
-# Determine selected memory section based on total memory
-if [ "$TOTAL_MEM" -le 1500 ]; then
-    SELECTED="MEM_1GB"
-elif [ "$TOTAL_MEM" -le 2500 ]; then
-    SELECTED="MEM_2GB"
-elif [ "$TOTAL_MEM" -le 4500 ]; then
-    SELECTED="MEM_3-4GB"
-elif [ "$TOTAL_MEM" -le 11000 ]; then
-    SELECTED="MEM_5-8GB"
-else
-    SELECTED="MEM_16+GB"
-fi
-
-# Remove the 'MEM_' prefix for pretty logging
-SELECTED_PRETTY=${SELECTED#MEM_}
-log "Applying sysctl configuration for $SELECTED_PRETTY RAM"
-
-# Remove unselected memory markers from the sysctl configuration
-for marker in MEM_1GB MEM_2GB MEM_3-4GB MEM_5-8GB MEM_16+GB; do
-    if [ "$marker" != "$SELECTED" ]; then
-         sed -i "/# --- BEGIN $marker/,/# --- END $marker/d" /etc/sysctl.d/99-default.conf
-    else
-         sed -i "/# --- BEGIN $marker/d" /etc/sysctl.d/99-default.conf
-         sed -i "/# --- END $marker/d" /etc/sysctl.d/99-default.conf
-    fi
-done
-
-#-------------------------------------------------------------------------
-# SWAP Configuration
-#-------------------------------------------------------------------------
 # Auto-select swap size based on available RAM
 if [ "$SWAPFILE_GB" = "AUTO" ]; then
     if [ "$TOTAL_MEM" -le 1500 ]; then       # ~ 1 GB
@@ -480,6 +485,7 @@ try update-grub
 log "Installation complete"
 
 log "Change root password:"
+try usermod -s /bin/bash root
 if ! passwd; then
     echo -e "${RED}[WARNING]${NC} Password change failed or was skipped."
     echo -e "The root password defaults to: ${BLUE}voidlinux${NC}"

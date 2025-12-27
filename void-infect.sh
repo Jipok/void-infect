@@ -10,6 +10,9 @@ SET_HOSTNAME="void-vps"
 ADD_LOCALE="ru_RU.UTF-8" # Optional
 ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu tree fastfetch void-repo-nonfree"
 
+USE_JIPOK_REPO=true
+ADD_PKG2="cute-bash jsysctl"
+
 # Time on VPS can drift. Installing an NTP client is highly recommended
 # to keep the system time accurate. Set to 'false' to disable.
 INSTALL_NTP=true
@@ -25,10 +28,15 @@ SWAPFILE_GB=AUTO
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 log() {
     echo -e "${GREEN}[+]${NC} $1"
+}
+
+warn() {
+    echo -e "${YELLOW}[!]${NC} $1"
 }
 
 error() {
@@ -36,6 +44,7 @@ error() {
     handle_error
 }
 
+# Critical try: exits script on failure
 try() {
     local log_file=$(mktemp)
 
@@ -45,6 +54,20 @@ try() {
         handle_error
     fi
     rm -f "$log_file"
+}
+
+# Soft try: warns on failure but continues execution
+try_soft() {
+    local log_file=$(mktemp)
+
+    if ! eval "$@" &> "$log_file"; then
+        echo -e "${YELLOW}[!] Optional step failed: $*${NC}"
+        cat "$log_file"
+        rm -f "$log_file"
+        return 1
+    fi
+    rm -f "$log_file"
+    return 0
 }
 
 export POINT_OF_NO_RETURN=false
@@ -214,7 +237,7 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
             grep -vE '(sshd|systemd-journal|systemd-udev)' | \
             xargs -r systemctl stop >> /dev/null
     else
-        log "Systemd not detected (running on Void/Alpine/Devuan?). Skipping explicit service stop."
+        warn "Systemd not detected (running on Void/Alpine/Devuan?). Skipping explicit service stop."
     fi
 
     log "Unmounting all non-essential filesystems..."
@@ -250,11 +273,30 @@ log "Updating packages..."
 try xbps-install -Syu
 
 log "Configuring xbps..."
-echo 'ignorepkg=linux-firmware-amd
+cat > /etc/xbps.d/99-void-infect.conf <<EOF
+# --- Storage Optimization ---
+# VPS environments typically run on virtualized hardware (KVM/Xen) and do not
+# utilize physical GPU or WiFi adapters. We ignore these heavy firmware packages
+# to save disk space and reduce update bandwidth.
+ignorepkg=linux-firmware-amd
 ignorepkg=linux-firmware-intel
 ignorepkg=linux-firmware-nvidia
 ignorepkg=linux-firmware-network
-ignorepkg=linux-headers' >> /etc/xbps.d/ignore.conf
+
+# --- Kernel & DKMS Logic ---
+# We use 'linux-lts' by default. However, DKMS packages often depend on
+# 'linux-headers' (which targets the mainline 'linux' kernel).
+# https://github.com/void-linux/void-packages/issues/30401
+ignorepkg=linux-headers
+
+# --- Shell Dotfiles Control ---
+# Keep /etc/skel clean. We don't need default aliases or wrappers in user
+# home directories because Bash and Readline automatically load global
+# configs from /etc/ when local files are missing.
+noextract=/etc/skel/.bashrc
+noextract=/etc/skel/.bash_profile
+noextract=/etc/skel/.bash_logout
+EOF
 
 log "Installing base system..."
 # Don't use `base-system` because it contains heavy and useless WiFi drivers
@@ -266,10 +308,37 @@ log "Installing necessary packages..."
 # Utils used by scripts
 try xbps-install -y bind-utils inotify-tools psmisc less jq unzip bc net-tools
 # We need it
-try xbps-install -y grub wget curl openssh bash-completion
+try xbps-install -y grub wget curl openssh
 
 log "Installing useful packages..."
 try xbps-install -y $ADD_PKG
+
+if [ "$USE_JIPOK_REPO" = true ]; then
+    log "Setting up custom repository..."
+
+    if try_soft wget --content-disposition -P /var/db/xbps/keys/ https://void-repo.jipok.ru/key; then
+        echo "repository=https://void-repo.jipok.ru" > /etc/xbps.d/10-vur-Jipok.conf
+
+        # Update index to verify connection
+        if try_soft xbps-install -S; then
+            CUSTOM_REPO_READY=true
+        else
+            warn "Failed to sync custom repository. Removing config."
+            rm -f /etc/xbps.d/10-vur-Jipok.conf
+        fi
+    else
+        warn "Failed to download custom repository key. Skipping."
+    fi
+fi
+
+if [ -n "$ADD_PKG2" ]; then
+    if [ "$CUSTOM_REPO_READY" = true ]; then
+        log "Installing packages from void-repo.jipok.ru..."
+        try_soft xbps-install -y $ADD_PKG2
+    else
+        warn "Skipping installation: $ADD_PKG2"
+    fi
+fi
 
 if [ "$INSTALL_NTP" = true ]; then
     log "Installing NTP client (openntpd)..."
@@ -303,13 +372,6 @@ log "Disabling unused services (agetty, udev)..."
 xbps-remove -Oo
 rm /etc/runit/runsvdir/default/agetty*
 rm /etc/runit/runsvdir/default/udevd
-
-log "Setting up bash configuration..."
-try wget https://raw.githubusercontent.com/Jipok/Cute-bash/master/.bashrc -O "/etc/bash/bashrc.d/cute-bash.sh"
-try wget "https://raw.githubusercontent.com/trapd00r/LS_COLORS/master/LS_COLORS" -O "/etc/bash/ls_colors"
-try wget "https://raw.githubusercontent.com/cykerway/complete-alias/master/complete_alias" -O "/etc/bash/complete_alias"
-rm "/etc/skel/.bashrc" 2>/dev/null || true
-usermod -s /bin/bash root || error "Failed to set bash as default shell"
 
 if [[ ! -z "$ADD_LOCALE" ]]; then
     log "Setting locales..."
@@ -359,45 +421,16 @@ cp -r /etc/sv/sshd /etc/runit/runsvdir/default/
 sed -i '/ssh-keygen -A/d' /etc/runit/runsvdir/default//sshd/run
 
 log "Disabling root password login..."
+try usermod -s /bin/bash root
 try passwd -l root
-
-log "Downloading sysctl configuration..."
-try mkdir /etc/sysctl.d
-try wget "https://raw.githubusercontent.com/Jipok/void-infect/refs/heads/master/sysctl.conf" -O /etc/sysctl.d/99-default.conf
-
-# Calculate total memory (in MB)
-mem_total_kb=$(grep '^MemTotal:' /proc/meminfo | awk '{print $2}')
-TOTAL_MEM=$((mem_total_kb / 1024))
-# Determine selected memory section based on total memory
-if [ "$TOTAL_MEM" -le 1500 ]; then
-    SELECTED="MEM_1GB"
-elif [ "$TOTAL_MEM" -le 2500 ]; then
-    SELECTED="MEM_2GB"
-elif [ "$TOTAL_MEM" -le 4500 ]; then
-    SELECTED="MEM_3-4GB"
-elif [ "$TOTAL_MEM" -le 11000 ]; then
-    SELECTED="MEM_5-8GB"
-else
-    SELECTED="MEM_16+GB"
-fi
-
-# Remove the 'MEM_' prefix for pretty logging
-SELECTED_PRETTY=${SELECTED#MEM_}
-log "Applying sysctl configuration for $SELECTED_PRETTY RAM"
-
-# Remove unselected memory markers from the sysctl configuration
-for marker in MEM_1GB MEM_2GB MEM_3-4GB MEM_5-8GB MEM_16+GB; do
-    if [ "$marker" != "$SELECTED" ]; then
-        sed -i "/# --- BEGIN $marker/,/# --- END $marker/d" /etc/sysctl.d/99-default.conf
-    else
-        sed -i "/# --- BEGIN $marker/d" /etc/sysctl.d/99-default.conf
-        sed -i "/# --- END $marker/d" /etc/sysctl.d/99-default.conf
-    fi
-done
 
 #-------------------------------------------------------------------------
 # SWAP Configuration
 #-------------------------------------------------------------------------
+# Calculate total memory (in MB)
+mem_total_kb=$(grep '^MemTotal:' /proc/meminfo | awk '{print $2}')
+TOTAL_MEM=$((mem_total_kb / 1024))
+
 # Auto-select swap size based on available RAM
 SWAPFILE_GB="AUTO" # Define this variable for swap logic
 if [ "$SWAPFILE_GB" = "AUTO" ]; then
