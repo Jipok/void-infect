@@ -8,7 +8,7 @@ set -e
 
 SET_HOSTNAME="void-vps"
 ADD_LOCALE="ru_RU.UTF-8" # Optional
-ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree fastfetch void-repo-nonfree"
+ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu tree fastfetch void-repo-nonfree"
 
 # Time on VPS can drift. Installing an NTP client is highly recommended
 # to keep the system time accurate. Set to 'false' to disable.
@@ -96,6 +96,7 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     [[ -d /void ]] && error "Remove /void before start"
     (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1) || error "This script requires either curl or wget to download files."
     command -v findmnt >/dev/null 2>&1 || error "findmnt not found. Install util-linux"
+    command -v xz >/dev/null 2>&1 || error "xz not found. Install it"
     GITHUB_USER="$1"
     if [ -z "$GITHUB_USER" ]; then
         if [ ! -f /root/.ssh/authorized_keys ] || ! grep -q "[^[:space:]]" /root/.ssh/authorized_keys; then
@@ -206,11 +207,15 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
         -e 's/::1/1.1.1.1/' > /void/etc/resolv.conf
 
     log "Stopping non-essential services..."
-    systemctl list-units --type=service --state=running | \
-        grep '\.service' | \
-        cut -d' ' -f1 | \
-        grep -vE '(sshd|systemd-journal|systemd-udev)' | \
-        xargs -r systemctl stop >> /dev/null
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl list-units --type=service --state=running | \
+            grep '\.service' | \
+            cut -d' ' -f1 | \
+            grep -vE '(sshd|systemd-journal|systemd-udev)' | \
+            xargs -r systemctl stop >> /dev/null
+    else
+        log "Systemd not detected (running on Void/Alpine/Devuan?). Skipping explicit service stop."
+    fi
 
     log "Unmounting all non-essential filesystems..."
     swapoff -a || true
@@ -248,7 +253,8 @@ log "Configuring xbps..."
 echo 'ignorepkg=linux-firmware-amd
 ignorepkg=linux-firmware-intel
 ignorepkg=linux-firmware-nvidia
-ignorepkg=linux-firmware-network' >> /etc/xbps.d/ignore.conf
+ignorepkg=linux-firmware-network
+ignorepkg=linux-headers' >> /etc/xbps.d/ignore.conf
 
 log "Installing base system..."
 # Don't use `base-system` because it contains heavy and useless WiFi drivers
@@ -258,7 +264,7 @@ try xbps-install -y man-pages mdocml ncurses iproute2 iputils traceroute ethtool
 
 log "Installing necessary packages..."
 # Utils used by scripts
-try xbps-install -y bind-utils inotify-tools psmisc parallel less jq unzip bc git net-tools
+try xbps-install -y bind-utils inotify-tools psmisc less jq unzip bc net-tools
 # We need it
 try xbps-install -y grub wget curl openssh bash-completion
 
