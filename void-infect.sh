@@ -8,7 +8,7 @@ set -e
 
 SET_HOSTNAME="void-vps"
 ADD_LOCALE="ru_RU.UTF-8" # Optional
-ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree fastfetch"
+ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree fastfetch void-repo-nonfree"
 
 # Time on VPS can drift. Installing an NTP client is highly recommended
 # to keep the system time accurate. Set to 'false' to disable.
@@ -250,13 +250,13 @@ ignorepkg=linux-firmware-network' >> /etc/xbps.d/ignore.conf
 
 log "Installing base system..."
 # Don't use `base-system` because it contains heavy and useless WiFi drivers
-try xbps-install -y base-minimal linux
+try xbps-install -y base-minimal linux-lts
 # Useful packages from base-system
 try xbps-install -y man-pages mdocml ncurses iproute2 iputils traceroute ethtool file kmod
 
 log "Installing necessary packages..."
 # Utils used by scripts
-try xbps-install -y bind-utils inotify-tools psmisc parallel less jq unzip bc git
+try xbps-install -y bind-utils inotify-tools psmisc parallel less jq unzip bc git net-tools
 # We need it
 try xbps-install -y grub wget curl openssh bash-completion
 

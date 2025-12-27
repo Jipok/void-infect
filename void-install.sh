@@ -16,7 +16,7 @@ SWAPFILE_GB=AUTO     # Swapfile size in GB or AUTO (based on RAM); 0 to disable
                      # NOTE: Using swapfile is preferred over swap partition (more flexible)
 SWAP_GB=0            # Swap partition size in gigabytes; 0 for not creating partition
 
-ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree fastfetch"
+ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree fastfetch void-repo-nonfree"
 
 #=========================================================================
 #                       HELPER FUNCTIONS
@@ -297,7 +297,9 @@ try xbps-install -y base-system
 # Package Installation
 #-------------------------------------------------------------------------
 log "Installing necessary packages..."
-try xbps-install -y bind-utils inotify-tools psmisc parallel less jq unzip bc git
+# Utils used by scripts
+try xbps-install -y bind-utils inotify-tools psmisc parallel less jq unzip bc git net-tools
+# We need it
 try xbps-install -y grub wget curl openssh bash-completion
 
 log "Installing additional useful packages..."
