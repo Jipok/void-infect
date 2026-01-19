@@ -349,18 +349,37 @@ fi
 log "Installing simple cron..."
 try xbps-install -y scron
 ln -sf /etc/sv/crond /etc/runit/runsvdir/default/
-echo "# * (wildcard), 30 (number), */N (repeat), 1-5 (range), or 1,3,6 (list)
+cat > /etc/crontab <<EOF
 #
-# .---------------- minute (0 - 59)
-# | .------------- hour (0 - 23)
-# | |  .---------- day of month (1 - 31)
-# | |  |  .------- month (1 - 12)
-# | |  |  |    .-- day of week (0 - 6)
-# | |  |  |    |
+# * (wildcard), 30 (number), */N (repeat), 1-5 (range), or 1,3,6 (list)
+#
+# ┌───────────── minute (0 - 59)
+# │ ┌───────────── hour (0 - 23)
+# │ │ ┌───────────── day of month (1 - 31)
+# │ │ │ ┌───────────── month (1 - 12)
+# │ │ │ │ ┌───────────── day of week (0 - 6)
+# │ │ │ │ │
 # m h dom mon dow   command
 
-0 4 * * * run-parts /etc/cron.daily &>> /var/log/cron.daily.log
-" > /etc/crontab
+# Run hourly jobs at minute 01
+1 * * * * run-parts /etc/cron.hourly >> /var/log/cron.hourly.log 2>&1
+
+# Run daily jobs at 05:00
+0 5 * * * run-parts /etc/cron.daily >> /var/log/cron.daily.log 2>&1
+
+# Run weekly jobs at 04:00 on Sunday
+0 4 * * 0 run-parts /etc/cron.weekly >> /var/log/cron.weekly.log 2>&1
+
+# Run monthly jobs at 03:00 on the first day of the month
+0 3 1 * * run-parts /etc/cron.monthly >> /var/log/cron.monthly.log 2>&1
+
+###########################
+
+EOF
+try mkdir -p /etc/cron.hourly
+try mkdir -p /etc/cron.daily
+try mkdir -p /etc/cron.weekly
+try mkdir -p /etc/cron.monthly
 
 log "Installing ufw..."
 try xbps-install -y ufw
