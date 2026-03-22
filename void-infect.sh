@@ -212,8 +212,28 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     fi
     [[ -e "$ROOT_DISK" ]] || error "Could not determine root disk device"
     [[ -b "$ROOT_DISK" ]] || error "Invalid root disk device: $ROOT_DISK"
-    # TODO Is it reely need?
     echo "$ROOT_DEV / $ROOT_FS_TYPE defaults 0 1" >> /void/etc/fstab
+
+    # EFI Detection and configuration
+    if [ -d "/sys/firmware/efi" ]; then
+        log "UEFI detected. Searching for EFI System Partition..."
+
+        EFI_DEV=$(findmnt -n -o SOURCE /boot/efi 2>/dev/null || true)
+        if [ -z "$EFI_DEV" ]; then
+            BOOT_FSTYPE=$(findmnt -n -o FSTYPE /boot 2>/dev/null || true)
+            if [[ "$BOOT_FSTYPE" == "vfat" ]]; then
+                EFI_DEV=$(findmnt -n -o SOURCE /boot 2>/dev/null || true)
+            fi
+        fi
+        if [ -z "$EFI_DEV" ]; then
+            EFI_DEV=$(lsblk -rn -o NAME,FSTYPE "$ROOT_DISK" | awk '$2=="vfat"{print "/dev/"$1; exit}')
+        fi
+        if [ -n "$EFI_DEV" ]; then
+            echo "$EFI_DEV /boot/efi vfat defaults 0 2" >> /void/etc/fstab
+            export TARGET_EFI_DEV="$EFI_DEV"
+        fi
+        # Without EFI partition will fallback to installing GRUB directly to /boot on rootfs (ext4 compat mode).
+    fi
 
     log "Copying essential files..."
     echo "$SET_HOSTNAME" > /void/etc/hostname
@@ -252,6 +272,10 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     try mount --bind /dev /void/dev
     try mount --bind /proc /void/proc
     try mount --bind /sys /void/sys
+    if [ -n "$TARGET_EFI_DEV" ]; then
+        try mkdir -p /void/boot/efi
+        try mount "$TARGET_EFI_DEV" /void/boot/efi
+    fi
 
     log "Entering chroot..."
     if ! env VOID_INFECT_STAGE_2=y chroot /void /void-infect.sh; then
@@ -483,7 +507,15 @@ export POINT_OF_NO_RETURN=true
 log "Installing bootloader..."
 if [ -d "/sys/firmware/efi" ]; then
     try xbps-install -y grub-x86_64-efi efibootmgr
-    try grub-install --target=x86_64-efi --efi-directory=/boot --removable
+
+    if mountpoint -q /boot/efi; then
+        # To dedicated EFI partition
+        rm -rf /boot/efi/EFI/* 2>/dev/null || true
+        try grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable
+    else
+        # Directly to /boot (Host firmware handles ext4)
+        try grub-install --target=x86_64-efi --efi-directory=/boot --removable
+    fi
 else
     # Use --force to allow blocklists on GPT disks booting in BIOS mode.
     # This is required for VPS providers that use GPT without a BIOS Boot Partition.
@@ -505,6 +537,7 @@ tar -cf - \
     --exclude='./dev/*' \
     --exclude='./proc/*' \
     --exclude='./sys/*' \
+    --exclude='./boot/efi/*' \
     --exclude='./tmp/*' \
     --exclude='./run/*' \
     --exclude='./media/*' \
