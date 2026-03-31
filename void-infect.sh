@@ -8,7 +8,7 @@ set -e
 
 SET_HOSTNAME="void-vps"
 ADD_LOCALE="ru_RU.UTF-8" # Optional
-ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu tree fastfetch void-repo-nonfree"
+ADD_PKG="fuzzypkg vsv tmux dte nano btop htop fd ncdu tree fastfetch void-repo-nonfree"
 
 USE_JIPOK_REPO=true
 ADD_PKG2="cute-bash jsysctl"
@@ -306,12 +306,23 @@ ignorepkg=linux-firmware-amd
 ignorepkg=linux-firmware-intel
 ignorepkg=linux-firmware-nvidia
 ignorepkg=linux-firmware-network
+ignorepkg=alsa-firmware
+ignorepkg=alsa-ucm-conf
+ignorepkg=sof-firmware
 
 # --- Kernel & DKMS Logic ---
 # We use 'linux-lts' by default. However, DKMS packages often depend on
 # 'linux-headers' (which targets the mainline 'linux' kernel).
 # https://github.com/void-linux/void-packages/issues/30401
 ignorepkg=linux-headers
+
+# Do not extract useless modules from the kernel package
+noextract=/usr/lib/modules/*/kernel/drivers/net/wireless/*
+noextract=/usr/lib/modules/*/kernel/drivers/net/wwan/*
+noextract=/usr/lib/modules/*/kernel/drivers/bluetooth/*
+noextract=/usr/lib/modules/*/kernel/drivers/gpu/*
+noextract=/usr/lib/modules/*/kernel/drivers/media/*
+noextract=/usr/lib/modules/*/kernel/sound/*
 
 # --- Shell Dotfiles Control ---
 # Keep /etc/skel clean. We don't need default aliases or wrappers in user
@@ -321,18 +332,22 @@ noextract=/etc/skel/.bashrc
 noextract=/etc/skel/.bash_profile
 noextract=/etc/skel/.bash_logout
 EOF
+# Contains iw pciutils and other useless
+try xbps-remove -y base-container-full
 
 log "Installing base system..."
 # Don't use `base-system` because it contains heavy and useless WiFi drivers
-try xbps-install -y base-minimal linux-lts
+try xbps-install -y base-minimal linux-lts openssh e2fsprogs dosfstools
 # Useful packages from base-system
-try xbps-install -y man-pages mdocml ncurses iproute2 iputils traceroute ethtool file kmod
+try xbps-install -y man-pages mdocml ncurses iproute2 iputils traceroute file kmod sudo
 
 log "Installing necessary packages..."
-# Utils used by scripts
-try xbps-install -y bind-utils inotify-tools psmisc less jq unzip bc net-tools
-# We need it
-try xbps-install -y grub wget curl openssh
+ESSENTIAL_PKGS="openssh e2fsprogs xfsprogs dosfstools man-pages mdocml ncurses iproute2 iputils traceroute file kmod bind-utils inotify-tools psmisc less jq unzip bc net-tools grub wget curl sudo"
+# Save packages from orphan cleaning
+for pkg in $ESSENTIAL_PKGS; do
+    xbps-pkgdb -m manual "$pkg" >/dev/null 2>&1 || true
+done
+try xbps-install -y $ESSENTIAL_PKGS
 
 log "Installing useful packages..."
 try xbps-install -y $ADD_PKG
@@ -411,8 +426,8 @@ ln -sf /etc/sv/ufw /etc/runit/runsvdir/default/
 sed -i 's/ENABLED=no/ENABLED=yes/' /etc/ufw/ufw.conf
 echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local
 
-log "Disabling unused services (agetty, udev)..."
-xbps-remove -Oo
+log "Disabling unused services and cleaning up..."
+try xbps-remove -yOo
 rm /etc/runit/runsvdir/default/agetty*
 rm /etc/runit/runsvdir/default/udevd
 

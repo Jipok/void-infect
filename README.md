@@ -2,9 +2,15 @@
 
 Script for replacing existing Linux system with Void Linux on VPS servers.
 
-Tested with Debian, Ubuntu and CentOS
+Tested with Debian, Ubuntu, CentOS and Arch
 
-Tested on VDSina.com, FirstByte.pro
+Successfully deployed on various budget VPS platforms, including:
+- VDSina
+- FirstByte
+- iPHoster
+- Timeweb Cloud
+- Amnezia Host
+- ...and many other low-cost providers.
 
 ![screenshot](https://github.com/user-attachments/assets/bbab2376-2e5d-4bce-95bd-fe478c8b1bbc)
 
