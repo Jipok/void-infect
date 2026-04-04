@@ -535,6 +535,10 @@ else
     # Use --force to allow blocklists on GPT disks booting in BIOS mode.
     # This is required for VPS providers that use GPT without a BIOS Boot Partition.
     try grub-install --force "$ROOT_DISK"
+    if [ -f /boot/grub/i386-pc/core.img ]; then
+        log "Locking GRUB core.img to prevent blocklist corruption..."
+        try_soft chattr +i /boot/grub/i386-pc/core.img
+    fi
 fi
 # Use traditional Linux naming scheme for interfaces
 sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 /' /etc/default/grub
