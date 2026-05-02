@@ -460,7 +460,7 @@ fi
   [ -z "$ipv6_gateway" ] && echo    "echo 1 > /proc/sys/net/ipv6/conf/eth0/accept_ra"    >> /etc/rc.local
 if [ -n "$ipv6_gateway" ]; then
     echo                            "ip -6 route add $ipv6_gateway dev eth0"             >> /etc/rc.local
-    echo                            "ip -6 route add default via $ipv6_gateway"          >> /etc/rc.local
+    echo                            "ip -6 route add default via $ipv6_gateway dev eth0"          >> /etc/rc.local
 fi
 echo                                ""                                                   >> /etc/rc.local
 echo                                "rm -rf /void #VOID-INFECT-STAGE-3"                  >> /etc/rc.local
