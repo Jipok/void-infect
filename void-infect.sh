@@ -441,30 +441,41 @@ log "Configuring network in /etc/rc.local..."
 interface=$(ip route show default | head -n1 | awk '{print $5}')
 [[ -z "$interface" ]] && interface=$(ip -6 route show default 2>/dev/null | head -n1 | awk '{print $5}')
 # 4
-ipv4_addr=$(ip addr show dev "$interface" | grep 'inet ' | awk '{print $2}')
+ipv4_addr=$(ip addr show dev "$interface" | grep 'inet ' | awk '{print $2}' | head -n1)
 ipv4_gateway=$(ip route show default | head -n1 | awk '{print $3}')
 # 6
-ipv6_addr=$(ip -6 addr show dev "$interface" | grep 'inet6' | grep -v 'fe80' | awk '{print $2}')
-ipv6_gateway=$(ip -6 route show default | head -n1 | awk '{print $3}')
-#
-echo                                ""                                                   >> /etc/rc.local
-echo                                "# From void-infect.sh"                              >> /etc/rc.local
-echo                                "ip link set dev eth0 up"                            >> /etc/rc.local
-[ -n "$ipv4_addr" ] && echo         "ip addr add $ipv4_addr dev eth0"                    >> /etc/rc.local
-# Explicitly add route to gateway first (required for /32 masks and onlink gateways)
-if [ -n "$ipv4_gateway" ]; then
-    echo                            "ip route add $ipv4_gateway dev eth0"                >> /etc/rc.local
-    echo                            "ip route add default via $ipv4_gateway"             >> /etc/rc.local
-fi
-[ -n "$ipv6_addr" ] && echo         "ip -6 addr add $ipv6_addr dev eth0"                 >> /etc/rc.local && \
-  [ -z "$ipv6_gateway" ] && echo    "echo 1 > /proc/sys/net/ipv6/conf/eth0/accept_ra"    >> /etc/rc.local
-if [ -n "$ipv6_gateway" ]; then
-    echo                            "ip -6 route add $ipv6_gateway dev eth0"             >> /etc/rc.local
-    echo                            "ip -6 route add default via $ipv6_gateway dev eth0"          >> /etc/rc.local
-fi
-echo                                ""                                                   >> /etc/rc.local
-echo                                "rm -rf /void #VOID-INFECT-STAGE-3"                  >> /etc/rc.local
-echo                                "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local "    >> /etc/rc.local
+ipv6_addr=$(ip -6 addr show dev "$interface" 2>/dev/null | grep 'inet6' | grep -v 'fe80' | awk '{print $2}' | head -n1)
+ipv6_gateway=$(ip -6 route show default 2>/dev/null | head -n1 | awk '{print $3}')
+
+# Write configuration block
+{
+    echo ""
+    echo "# From void-infect.sh"
+    echo "ip link set dev eth0 up"
+
+    [ -n "$ipv4_addr" ] && echo "ip addr add $ipv4_addr dev eth0"
+
+    # Explicitly add route to gateway first (required for /32 masks and onlink gateways)
+    if [ -n "$ipv4_gateway" ]; then
+        echo "ip route add $ipv4_gateway dev eth0"
+        echo "ip route add default via $ipv4_gateway"
+    fi
+
+    if [ -n "$ipv6_addr" ]; then
+        echo "ip -6 addr add $ipv6_addr dev eth0"
+        [ -z "$ipv6_gateway" ] && echo "echo 1 > /proc/sys/net/ipv6/conf/eth0/accept_ra"
+    fi
+
+    if [ -n "$ipv6_gateway" ]; then
+        echo "ip -6 route add $ipv6_gateway dev eth0"
+        echo "ip -6 route add default via $ipv6_gateway dev eth0"
+    fi
+
+    echo ""
+    echo "rm -rf /void #VOID-INFECT-STAGE-3"
+    echo "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local"
+} >> /etc/rc.local
+
 
 log "Configuring SSH..."
 # Secure SSH configuration
