@@ -7,7 +7,7 @@ set -e
 #=========================================================================
 
 SET_HOSTNAME="void-vps"
-ADD_LOCALE="ru_RU.UTF-8" # Optional
+ADD_LOCALE="ru_RU.UTF-8" # Optional locale
 ADD_PKG="fuzzypkg vsv tmux dte nano btop htop fd ncdu tree fastfetch void-repo-nonfree"
 
 USE_JIPOK_REPO=true
@@ -111,15 +111,16 @@ handle_error() {
 trap handle_error ERR INT TERM
 
 ###############################################################################
+# First Stage: Before chroot – Preparing and extracting Void rootfs
+###############################################################################
 
-# First stage, before chroot
-
-if [ -z $VOID_INFECT_STAGE_2 ]; then
+if [ -z "$VOID_INFECT_STAGE_2" ]; then
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
     [[ -d /void ]] && error "Remove /void before start"
     (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1) || error "This script requires either curl or wget to download files."
     command -v findmnt >/dev/null 2>&1 || error "findmnt not found. Install util-linux"
     command -v xz >/dev/null 2>&1 || error "xz not found. Install it"
+
     GITHUB_USER="$1"
     if [ -z "$GITHUB_USER" ]; then
         if [ ! -f /root/.ssh/authorized_keys ] || ! grep -q "[^[:space:]]" /root/.ssh/authorized_keys; then
@@ -180,6 +181,9 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
 
     export SCRIPT_STARTED=true
 
+    #-------------------------------------------------------------------------
+    # Setup /void directory and extraction
+    #-------------------------------------------------------------------------
     log "Creating /void directory..."
     SCRIPT_PATH=$(readlink -f "$0")
     try mkdir -p /void
@@ -202,6 +206,9 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     try tar xf "/void/rootfs.tar.xz" -C "/void"
     try rm "/void/rootfs.tar.xz"
 
+    #-------------------------------------------------------------------------
+    # Target system analysis (fstab & EFI)
+    #-------------------------------------------------------------------------
     log "Configuring fstab..."
     ROOT_DEV=$(findmnt -n -o SOURCE /)
     ROOT_FS_TYPE=$(findmnt -n -o FSTYPE /)
@@ -235,15 +242,21 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
         # Without EFI partition will fallback to installing GRUB directly to /boot on rootfs (ext4 compat mode).
     fi
 
+    #-------------------------------------------------------------------------
+    # File syncing & preparation for chroot
+    #-------------------------------------------------------------------------
     log "Copying essential files..."
     echo "$SET_HOSTNAME" > /void/etc/hostname
-    # self
+
+    # Copy this script
     cp "$SCRIPT_PATH" /void/void-infect.sh
-    # ssh
+
+    # Copy SSH keys
     mkdir -p /void/root/.ssh
     try cp "$SSH_KEYS_SOURCE" /void/root/.ssh/authorized_keys
     chmod 700 /void/root/.ssh
     chmod 600 /void/root/.ssh/authorized_keys
+
     # Extract DNS servers, replace localhost with 1.1.1.1
     grep ^nameserver /etc/resolv.conf | sed -r \
         -e 's/127[0-9.]+/1.1.1.1/' \
@@ -285,9 +298,9 @@ if [ -z $VOID_INFECT_STAGE_2 ]; then
     exit 0
 fi
 
-###############################################################################
-
-# Second stage, inside chroot
+##################################################################################
+# Second Stage: Inside chroot – System configuration and system replacement
+##################################################################################
 export SCRIPT_STARTED=true
 
 log "Updating xbps..."
@@ -296,6 +309,9 @@ try xbps-install -Syu xbps
 log "Updating packages..."
 try xbps-install -Syu
 
+#-------------------------------------------------------------------------
+# Storage Optimization
+#-------------------------------------------------------------------------
 log "Configuring xbps..."
 cat > /etc/xbps.d/99-void-infect.conf <<EOF
 # --- Storage Optimization ---
@@ -332,9 +348,13 @@ noextract=/etc/skel/.bashrc
 noextract=/etc/skel/.bash_profile
 noextract=/etc/skel/.bash_logout
 EOF
-# Contains iw pciutils and other useless
+
+# Contains iw pciutils and other useless utilities for a VPS
 try xbps-remove -y base-container-full
 
+#-------------------------------------------------------------------------
+# Base System & Package Installation
+#-------------------------------------------------------------------------
 log "Installing base system..."
 # Don't use `base-system` because it contains heavy and useless WiFi drivers
 try xbps-install -y base-minimal linux-lts openssh e2fsprogs dosfstools
@@ -379,6 +399,9 @@ if [ -n "$ADD_PKG2" ]; then
     fi
 fi
 
+#-------------------------------------------------------------------------
+# NTP & Cron Setup
+#-------------------------------------------------------------------------
 if [ "$INSTALL_NTP" = true ]; then
     log "Installing NTP client (openntpd)..."
     try xbps-install -y openntpd
@@ -420,30 +443,41 @@ try mkdir -p /etc/cron.daily
 try mkdir -p /etc/cron.weekly
 try mkdir -p /etc/cron.monthly
 
+#-------------------------------------------------------------------------
+# Firewall Setup
+#-------------------------------------------------------------------------
 log "Installing ufw..."
 try xbps-install -y ufw
 ln -sf /etc/sv/ufw /etc/runit/runsvdir/default/
 sed -i 's/ENABLED=no/ENABLED=yes/' /etc/ufw/ufw.conf
 echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local
 
+#-------------------------------------------------------------------------
+# Cleanup & Locales
+#-------------------------------------------------------------------------
 log "Disabling unused services and cleaning up..."
 try xbps-remove -yOo
 rm /etc/runit/runsvdir/default/agetty*
 rm /etc/runit/runsvdir/default/udevd
 
-if [[ ! -z "$ADD_LOCALE" ]]; then
+if [[ -n "$ADD_LOCALE" ]]; then
     log "Setting locales..."
     sed -i "s/^# *$ADD_LOCALE/$ADD_LOCALE/" /etc/default/libc-locales
     try xbps-reconfigure -f glibc-locales
 fi
 
+#-------------------------------------------------------------------------
+# Network Configuration
+#-------------------------------------------------------------------------
 log "Configuring network in /etc/rc.local..."
 interface=$(ip route show default | head -n1 | awk '{print $5}')
 [[ -z "$interface" ]] && interface=$(ip -6 route show default 2>/dev/null | head -n1 | awk '{print $5}')
-# 4
+
+# IPv4
 ipv4_addr=$(ip addr show dev "$interface" | grep 'inet ' | awk '{print $2}' | head -n1)
 ipv4_gateway=$(ip route show default | head -n1 | awk '{print $3}')
-# 6
+
+# IPv6
 ipv6_addr=$(ip -6 addr show dev "$interface" 2>/dev/null | grep 'inet6' | grep -v 'fe80' | awk '{print $2}' | head -n1)
 ipv6_gateway=$(ip -6 route show default 2>/dev/null | head -n1 | awk '{print $3}')
 
@@ -476,7 +510,9 @@ ipv6_gateway=$(ip -6 route show default 2>/dev/null | head -n1 | awk '{print $3}
     echo "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local"
 } >> /etc/rc.local
 
-
+#-------------------------------------------------------------------------
+# SSH Configuration
+#-------------------------------------------------------------------------
 log "Configuring SSH..."
 # Secure SSH configuration
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
@@ -501,7 +537,6 @@ mem_total_kb=$(grep '^MemTotal:' /proc/meminfo | awk '{print $2}')
 TOTAL_MEM=$((mem_total_kb / 1024))
 
 # Auto-select swap size based on available RAM
-SWAPFILE_GB="AUTO" # Define this variable for swap logic
 if [ "$SWAPFILE_GB" = "AUTO" ]; then
     if [ "$TOTAL_MEM" -le 1500 ]; then       # ~ 1 GB
         SWAPFILE_GB=2     # 2x RAM
@@ -526,8 +561,9 @@ if [ "$SWAPFILE_GB" -gt 0 ]; then
     echo "/swapfile none swap sw 0 0" >> /etc/fstab
 fi
 
-###############################################################################
-
+#-------------------------------------------------------------------------
+# Bootloader Installation
+#-------------------------------------------------------------------------
 export POINT_OF_NO_RETURN=true
 
 log "Installing bootloader..."
@@ -551,12 +587,16 @@ else
         try_soft chattr +i /boot/grub/i386-pc/core.img
     fi
 fi
+
 # Use traditional Linux naming scheme for interfaces
 sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 /' /etc/default/grub
 # IPv6 support
 [ -n "$ipv6_addr" ] && sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="ipv6.disable=0 /' /etc/default/grub
 try update-grub
 
+#-------------------------------------------------------------------------
+# System Replacement & Reboot
+#-------------------------------------------------------------------------
 log "Removing old system..."
 cd /oldroot
 ls -A | grep -vE '^(dev|proc|sys|mnt|void)$' | xargs rm -rf
@@ -581,6 +621,7 @@ log "System replacement complete. Rebooting..."
 
 IP_ADDRESS=$(ip route get 1 2>/dev/null | awk '{print $7}' | head -1)
 FORMATTED_IP=$(printf "%-15s" "${IP_ADDRESS}")
+
 echo -e "
 ╔════════════════════════════════════════════════════════════════════╗
 ║                       IMPORTANT INFORMATION                        ║
