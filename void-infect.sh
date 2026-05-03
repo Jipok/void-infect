@@ -212,11 +212,18 @@ if [ -z "$VOID_INFECT_STAGE_2" ]; then
     log "Configuring fstab..."
     ROOT_DEV=$(findmnt -n -o SOURCE /)
     ROOT_FS_TYPE=$(findmnt -n -o FSTYPE /)
-    if [[ "$ROOT_DEV" =~ "nvme" ]]; then
-        export ROOT_DISK=$(echo "$ROOT_DEV" | sed -E 's/p[0-9]+$//')
-    else
-        export ROOT_DISK=$(echo "$ROOT_DEV" | sed 's/[0-9]*$//')
-    fi
+    # TODO uuid
+
+    # Strip BTRFS subvolume suffixes (e.g. [/@]) and resolve symlinks (e.g. /dev/root)
+    REAL_DEV=$(readlink -f "${ROOT_DEV%\[*}" || echo "${ROOT_DEV%\[*}")
+
+    # Universally strip partition numbers and optional 'p' prefix
+    # sda1 -> sda  |  vda2 -> vda  |  nvme0n1p1 -> nvme0n1  |  mmcblk0p1 -> mmcblk0
+    export ROOT_DISK=$(echo "$REAL_DEV" | sed -E 's/p?[0-9]+$//')
+
+    # Safe fallback for LVM or unusual block devices
+    [[ -b "$ROOT_DISK" ]] || export ROOT_DISK="$REAL_DEV"
+
     [[ -e "$ROOT_DISK" ]] || error "Could not determine root disk device"
     [[ -b "$ROOT_DISK" ]] || error "Invalid root disk device: $ROOT_DISK"
     echo "$ROOT_DEV / $ROOT_FS_TYPE defaults 0 1" >> /void/etc/fstab
