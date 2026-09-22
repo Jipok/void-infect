@@ -288,6 +288,11 @@ if [ -z "$VOID_INFECT_STAGE_2" ]; then
     done
 
     log "Mounting necessary filesystems..."
+    # dracut runs inside the chroot, where / is not a mountpoint. Its hostonly
+    # mode then cannot detect the root filesystem and silently omits its kernel
+    # module (e.g. ext4), which produces an unbootable initramfs.
+    # Bind-mounting /void onto itself makes / a mountpoint and fixes detection.
+    try mount --bind /void /void
     try mount --bind / /void/oldroot
     try mount --bind /dev /void/dev
     try mount --bind /proc /void/proc
@@ -301,6 +306,8 @@ if [ -z "$VOID_INFECT_STAGE_2" ]; then
     if ! env VOID_INFECT_STAGE_2=y chroot /void /void-infect.sh; then
         exit 1
     fi
+
+    umount /void 2>/dev/null || true
 
     exit 0
 fi
