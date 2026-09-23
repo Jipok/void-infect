@@ -12,11 +12,12 @@ INSTALL_NTP=true
 
 WIFI=true            # If true, install NetworkManager (for WiFi); if false, install dhcpcd (for wired)
 
-SWAPFILE_GB=AUTO     # Swapfile size in GB or AUTO (based on RAM); 0 to disable
+# TODO разобраться здесь. swapfile vs раздел. Раздел пожалуй нафиг не нужен. Гибернация серверам вроде не нужна, но можно и настроить
+SWAPFILE_GB="${SWAPFILE_GB:-AUTO}" # Swapfile size in GB or AUTO (based on RAM); 0 to disable
                      # NOTE: Using swapfile is preferred over swap partition (more flexible)
 SWAP_GB=0            # Swap partition size in gigabytes; 0 for not creating partition
 
-ADD_PKG="fuzzypkg vsv tmux dte nano gotop fd ncdu git tree fastfetch void-repo-nonfree"
+ADD_PKG="fuzzypkg vsv tmux dte nano btop fd ncdu git tree fastfetch void-repo-nonfree"
 
 USE_JIPOK_REPO=true
 ADD_PKG2="cute-bash jsysctl"
@@ -29,6 +30,7 @@ ADD_PKG2="cute-bash jsysctl"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 SSH_KEY="${SSH_KEY:-}"
@@ -49,8 +51,7 @@ error() {
 
 # Critical try: exits script on failure
 try() {
-    local log_file
-    log_file=$(mktemp)
+    local log_file=$(mktemp)
 
     if ! eval "$@" &> "$log_file"; then
         echo -e "${RED}[!]${NC} Failed: $*"
@@ -123,13 +124,12 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1) || error "This script requires either curl or wget to download files."
     command -v parted >/dev/null 2>&1 || error "parted not found. Install it"
     command -v xz >/dev/null 2>&1 || error "xz not found. Install it"
-    command -v wget >/dev/null 2>&1 || command -v curl >/dev/null 2>&1 || error "Neither curl nor wget is available. Install something"
     [ -n "$1" ] || error "Usage: $0 /dev/sdX (or /dev/nvme0n1, etc)"
     TARGET_DISK="$1"
     [ -b "$TARGET_DISK" ] || error "Target disk $TARGET_DISK does not exist or is not a block device."
 
     # Check if the target disk has any existing partitions.
-    existing_partitions=$(lsblk -n -o NAME "$TARGET_DISK" | tail -n +2)
+    existing_partitions=$(lsblk -rn -o TYPE "$TARGET_DISK" | grep "part" || true)
     if [ -n "$existing_partitions" ]; then
         error "Existing partitions detected on $TARGET_DISK. Remove all partitions before proceeding:
         ${BLUE}parted $TARGET_DISK mklabel gpt${NC}"
@@ -196,9 +196,6 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     VOID_HASH=$(echo "$IMAGE_INFO" | awk '{print $4}')
     [ -n "$VOID_HASH" ] || error "Could not parse hash from image info."
 
-    # VOID_LINK="https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20250202.tar.xz"
-    # VOID_HASH="3f48e6673ac5907a897d913c97eb96edbfb230162731b4016562c51b3b8f1876"
-
     #-------------------------------------------------------------------------
     # Disk partitioning
     #-------------------------------------------------------------------------
@@ -221,8 +218,8 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     #-------------------------------------------------------------------------
 
     # Determine partition naming scheme.
-    # If disk name contains "nvme", partitions use 'p' separator (e.g. /dev/nvme0n1p1)
-    if [[ "$TARGET_DISK" =~ nvme ]]; then
+    # Checks if block device ends with a digit (e.g. nvme0n1 -> nvme0n1p1, mmcblk0 -> mmcblk0p1)
+    if [[ "$TARGET_DISK" =~ [0-9]$ ]]; then
         PART_PREFIX="${TARGET_DISK}p"
     else
         PART_PREFIX="$TARGET_DISK"
@@ -269,9 +266,14 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     try rm "/mnt/rootfs.tar.xz"
 
     log "Configuring fstab..."
+    ROOT_UUID=$(blkid -s UUID -o value "${ROOT_PARTITION}")
+    EFI_UUID=$(blkid -s UUID -o value "${PART_PREFIX}1")
+    [ -z "$ROOT_UUID" ] && error "Failed to get UUID for root partition"
+    [ -z "$EFI_UUID" ] && error "Failed to get UUID for EFI partition"
+
     {
-      echo "${ROOT_PARTITION} / ext4 defaults,noatime,discard 0 1"
-      echo "${PART_PREFIX}1 /boot/efi vfat defaults,umask=0077 0 1"
+      echo "UUID=${ROOT_UUID} / ext4 defaults,noatime,discard 0 1"
+      echo "UUID=${EFI_UUID} /boot/efi vfat defaults,umask=0077 0 2"
       if [ "$SWAP_GB" -gt 0 ]; then
           SWAP_UUID=$(blkid -s UUID -o value "${PART_PREFIX}2" 2>/dev/null || true)
           if [ -n "$SWAP_UUID" ]; then
@@ -284,7 +286,9 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
 
     log "Setting hostname..."
     echo "$SET_HOSTNAME" > /mnt/etc/hostname
-    try cp /etc/resolv.conf /mnt/etc/resolv.conf # For working dns in stage 2
+    grep ^nameserver /etc/resolv.conf | sed -r \
+        -e 's/127[0-9.]+/1.1.1.1/' \
+        -e 's/::1/1.1.1.1/' > /mnt/etc/resolv.conf
 
     # Copy this installer script into new system for second stage
     SCRIPT_PATH=$(readlink -f "$0")
@@ -297,7 +301,10 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     try mount --bind /run /mnt/run
 
     log "Entering chroot for second stage installation..."
-    env VOID_INSTALL_STAGE_2=y SSH_KEY="$SSH_KEY" chroot /mnt /void-install.sh
+    # Disable swapfile in stage 2 if a physical swap partition was already created above
+    [ "$SWAP_GB" -gt 0 ] && export SWAPFILE_GB=0
+
+    env VOID_INSTALL_STAGE_2=y SSH_KEY="$SSH_KEY" SWAPFILE_GB="$SWAPFILE_GB" chroot /mnt /void-install.sh
 
     exit 0
 fi
@@ -422,9 +429,11 @@ log "Installing ufw (firewall)..."
 try xbps-install -y ufw
 ln -sf /etc/sv/ufw /etc/runit/runsvdir/default/
 sed -i 's/ENABLED=no/ENABLED=yes/' /etc/ufw/ufw.conf
-#
-echo "ufw allow ssh #VOID-INFECT-STAGE-3" >> /etc/rc.local
-echo "sed -i '/#VOID-INFECT-STAGE-3/d' /etc/rc.local " >> /etc/rc.local
+
+{
+    echo "ufw allow ssh #VOID-INSTALL-STAGE-3"
+    echo "sed -i '/#VOID-INSTALL-STAGE-3/d' /etc/rc.local "
+} >> /etc/rc.local
 
 #-------------------------------------------------------------------------
 # Locale Configuration
@@ -449,10 +458,14 @@ SSH_FP=$(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub | awk '{print $2}')
 # Prevent generation of legacy keys during service start
 cp -r /etc/sv/sshd /etc/runit/runsvdir/default/
 sed -i '/ssh-keygen -A/d' /etc/runit/runsvdir/default//sshd/run
-# Set key
-try mkdir -p /root/.ssh
-try chmod 700 /root/.ssh
-echo "$SSH_KEY" > /root/.ssh/authorized_keys
+
+if [ -n "$SSH_KEY" ]; then
+    log "Setting up SSH authorized_keys..."
+    try mkdir -p /root/.ssh
+    try chmod 700 /root/.ssh
+    echo "$SSH_KEY" > /root/.ssh/authorized_keys
+    try chmod 600 /root/.ssh/authorized_keys
+fi
 
 #-------------------------------------------------------------------------
 # SWAP Configuration
