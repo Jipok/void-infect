@@ -17,7 +17,7 @@ SWAPFILE_GB="${SWAPFILE_GB:-AUTO}" # Swapfile size in GB or AUTO (based on RAM);
                      # NOTE: Using swapfile is preferred over swap partition (more flexible)
 SWAP_GB=0            # Swap partition size in gigabytes; 0 for not creating partition
 
-ADD_PKG="fuzzypkg vsv tmux dte nano btop fd ncdu git tree fastfetch void-repo-nonfree"
+ADD_PKG="fuzzypkg vsv tmux dte nano btop fd ncdu tree fastfetch void-repo-nonfree"
 
 USE_JIPOK_REPO=true
 ADD_PKG2="cute-bash jsysctl"
@@ -121,6 +121,7 @@ trap handle_error ERR INT TERM
 
 if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
+    [ -d "/sys/firmware/efi" ] || error "No EFI support detected. BIOS installation not implemented in this script."
     (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1) || error "This script requires either curl or wget to download files."
     command -v parted >/dev/null 2>&1 || error "parted not found. Install it"
     command -v xz >/dev/null 2>&1 || error "xz not found. Install it"
@@ -304,14 +305,23 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     # Disable swapfile in stage 2 if a physical swap partition was already created above
     [ "$SWAP_GB" -gt 0 ] && export SWAPFILE_GB=0
 
-    env VOID_INSTALL_STAGE_2=y SSH_KEY="$SSH_KEY" SWAPFILE_GB="$SWAPFILE_GB" chroot /mnt /void-install.sh
+    if ! env VOID_INSTALL_STAGE_2=y SSH_KEY="$SSH_KEY" SWAPFILE_GB="$SWAPFILE_GB" chroot /mnt /void-install.sh; then
+        exit 1
+    fi
 
+    rm -f /mnt/void-install.sh
+    [ "$SWAP_GB" -gt 0 ] && swapoff "${PART_PREFIX}2" 2>/dev/null || true
+    sync
+    umount -R /mnt
+
+    log "All partitions unmounted. You can safely reboot now."
     exit 0
 fi
 
 ##################################################################################
 # Second Stage: Inside chroot – System configuration, package installation, GRUB
 ##################################################################################
+export SCRIPT_STARTED=true
 
 log "Updating xbps..."
 try xbps-install -Syu xbps
@@ -495,7 +505,6 @@ if [ "$SWAPFILE_GB" -gt 0 ]; then
     try fallocate -l ${SWAPFILE_GB}G /swapfile
     try chmod 600 /swapfile
     try mkswap /swapfile
-    try swapon /swapfile
     echo "/swapfile none swap sw 0 0" >> /etc/fstab
 fi
 
@@ -503,12 +512,8 @@ fi
 # Bootloader Installation
 #-------------------------------------------------------------------------
 log "Installing bootloader..."
-if [ -d "/sys/firmware/efi" ]; then
-    try xbps-install -y grub-x86_64-efi efibootmgr
-    try grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable
-else
-    error "No EFI support detected. BIOS installation not implemented in this script."
-fi
+try xbps-install -y grub-x86_64-efi efibootmgr
+try grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable
 
 # Use traditional Linux naming scheme for interfaces and enable IPv6 support if needed
 sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 /' /etc/default/grub
@@ -535,7 +540,10 @@ echo -e "
 ║ 1. You can install extra packages (xbps-install ...)               ║
 ║ 2. Check configs in /etc/                                          ║
 ║ 3. Type 'exit' to leave chroot and return to the Live environment  ║
+╠════════════════════════════════════════════════════════════════════╣
+║ SSH host key fingerprint:                                          ║
+║   ${BLUE}${SSH_FP}${NC}               ║
 ╚════════════════════════════════════════════════════════════════════╝
 "
 
-/bin/bash
+/bin/bash || true
