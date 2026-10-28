@@ -22,6 +22,9 @@ ADD_PKG="fuzzypkg vsv tmux dte nano btop fd ncdu tree fastfetch void-repo-nonfre
 USE_JIPOK_REPO=true
 ADD_PKG2="cute-bash jsysctl"
 
+# Void mirror URL, or AUTO to pick the fastest
+VOID_MIRROR="${VOID_MIRROR:-AUTO}"
+
 #=========================================================================
 #                       HELPER FUNCTIONS
 #=========================================================================
@@ -182,18 +185,37 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
         sleep 7
     fi
 
+    MIRRORS="https://repo-default.voidlinux.org https://repo-de.voidlinux.org https://ftp.lysator.liu.se/pub/voidlinux https://mirror.yandex.ru/mirrors/voidlinux"
+    if [ "$VOID_MIRROR" = "AUTO" ]; then
+        VOID_MIRROR="https://repo-default.voidlinux.org"
+        if command -v curl >/dev/null 2>&1; then
+            log "Selecting fastest mirror..."
+            best_speed=0
+            for m in $MIRRORS; do
+                speed=$(curl -fsS -r 0-524287 --connect-timeout 2 --max-time 2 -o /dev/null -w '%{speed_download}' "$m/current/x86_64-repodata" 2>/dev/null) || speed=0
+                speed=${speed%%.*}
+                if [ "${speed:-0}" -gt "$best_speed" ]; then
+                    best_speed=$speed
+                    VOID_MIRROR=$m
+                fi
+            done
+        fi
+    fi
+    export VOID_MIRROR="${VOID_MIRROR%/}"
+    log "Using mirror: $VOID_MIRROR"
+
     log "Fetching the latest image information..."
     if command -v curl >/dev/null 2>&1; then
-        IMAGE_INFO=$(curl -s https://repo-default.voidlinux.org/live/current/sha256sum.txt | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
+        IMAGE_INFO=$(curl -s "$VOID_MIRROR/live/current/sha256sum.txt" | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
     elif command -v wget >/dev/null 2>&1; then
-        IMAGE_INFO=$(wget -qO- https://repo-default.voidlinux.org/live/current/sha256sum.txt | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
+        IMAGE_INFO=$(wget -qO- "$VOID_MIRROR/live/current/sha256sum.txt" | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
     fi
     [ -n "$IMAGE_INFO" ] || error "Could not find image info in sha256sum.txt"
 
     # Parse filename, link and hash from the fetched info
     VOID_FILENAME=$(echo "$IMAGE_INFO" | sed -n 's/.*(\(.*\)).*/\1/p')
     [ -n "$VOID_FILENAME" ] || error "Could not parse filename from image info."
-    VOID_LINK="https://repo-default.voidlinux.org/live/current/$VOID_FILENAME"
+    VOID_LINK="$VOID_MIRROR/live/current/$VOID_FILENAME"
     VOID_HASH=$(echo "$IMAGE_INFO" | awk '{print $4}')
     [ -n "$VOID_HASH" ] || error "Could not parse hash from image info."
 
@@ -251,9 +273,9 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
 
     log "Downloading Void Linux rootfs..."
     if command -v curl >/dev/null 2>&1; then
-        try curl -fL "$VOID_LINK" -o "/mnt/rootfs.tar.xz"
+        try curl -fL --retry 3 "$VOID_LINK" -o "/mnt/rootfs.tar.xz"
     elif command -v wget >/dev/null 2>&1; then
-        try wget -O "/mnt/rootfs.tar.xz" "$VOID_LINK"
+        try wget --tries=3 -O "/mnt/rootfs.tar.xz" "$VOID_LINK"
     fi
 
     log "Verifying SHA256 checksum of rootfs..."
@@ -265,6 +287,12 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     log "Extracting rootfs to /mnt..."
     try tar xf "/mnt/rootfs.tar.xz" -C /mnt
     try rm "/mnt/rootfs.tar.xz"
+
+    if [ "$VOID_MIRROR" != "https://repo-default.voidlinux.org" ]; then
+        mkdir -p /mnt/etc/xbps.d
+        cp /mnt/usr/share/xbps.d/*-repository-*.conf /mnt/etc/xbps.d/
+        sed -i "s|https://repo-default.voidlinux.org|$VOID_MIRROR|g" /mnt/etc/xbps.d/*-repository-*.conf
+    fi
 
     log "Configuring fstab..."
     ROOT_UUID=$(blkid -s UUID -o value "${ROOT_PARTITION}")
@@ -305,7 +333,7 @@ if [ -z "$VOID_INSTALL_STAGE_2" ]; then
     # Disable swapfile in stage 2 if a physical swap partition was already created above
     [ "$SWAP_GB" -gt 0 ] && export SWAPFILE_GB=0
 
-    if ! env VOID_INSTALL_STAGE_2=y SSH_KEY="$SSH_KEY" SWAPFILE_GB="$SWAPFILE_GB" chroot /mnt /void-install.sh; then
+    if ! env VOID_INSTALL_STAGE_2=y SSH_KEY="$SSH_KEY" SWAPFILE_GB="$SWAPFILE_GB" VOID_MIRROR="$VOID_MIRROR" chroot /mnt /void-install.sh; then
         exit 1
     fi
 
@@ -343,6 +371,11 @@ try xbps-install -y grub wget curl openssh bash-completion
 
 log "Installing additional useful packages..."
 try xbps-install -y $ADD_PKG
+
+if [ "$VOID_MIRROR" != "https://repo-default.voidlinux.org" ]; then
+    cp /usr/share/xbps.d/*-repository-*.conf /etc/xbps.d/
+    sed -i "s|https://repo-default.voidlinux.org|$VOID_MIRROR|g" /etc/xbps.d/*-repository-*.conf
+fi
 
 if [ "$USE_JIPOK_REPO" = true ]; then
     log "Setting up custom repository..."
