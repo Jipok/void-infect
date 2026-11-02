@@ -317,11 +317,6 @@ if [ -z "$VOID_INFECT_STAGE_2" ]; then
     done
 
     log "Mounting necessary filesystems..."
-    # dracut runs inside the chroot, where / is not a mountpoint. Its hostonly
-    # mode then cannot detect the root filesystem and silently omits its kernel
-    # module (e.g. ext4), which produces an unbootable initramfs.
-    # Bind-mounting /void onto itself makes / a mountpoint and fixes detection.
-    try mount --bind /void /void
     try mount --bind / /void/oldroot
     try mount --bind /dev /void/dev
     try mount --bind /proc /void/proc
@@ -335,8 +330,6 @@ if [ -z "$VOID_INFECT_STAGE_2" ]; then
     if ! env VOID_INFECT_STAGE_2=y chroot /void /void-infect.sh; then
         exit 1
     fi
-
-    umount /void 2>/dev/null || true
 
     exit 0
 fi
@@ -399,8 +392,13 @@ try xbps-remove -y base-container-full
 # Base System & Package Installation
 #-------------------------------------------------------------------------
 log "Installing base system..."
+# dracut runs inside the chroot where / is not a mountpoint, so its hostonly
+# detection would skip root filesystem modules (e.g. ext4 when built into host kernel).
+mkdir -p /etc/dracut.conf.d
+echo 'hostonly="no"' > /etc/dracut.conf.d/void-infect.conf
 # Don't use `base-system` because it contains heavy and useless WiFi drivers
 try xbps-install -y base-minimal linux-lts openssh e2fsprogs dosfstools
+rm -f /etc/dracut.conf.d/void-infect.conf
 # Useful packages from base-system
 try xbps-install -y man-pages mdocml ncurses iproute2 iputils traceroute file kmod sudo
 
