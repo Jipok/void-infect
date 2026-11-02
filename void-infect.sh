@@ -11,7 +11,8 @@ ADD_LOCALE="ru_RU.UTF-8" # Optional locale
 ADD_PKG="fuzzypkg vsv tmux dte nano btop htop fd ncdu tree fastfetch void-repo-nonfree"
 
 USE_JIPOK_REPO=true
-ADD_PKG2="cute-bash jsysctl"
+# void-auto-update: nightly xbps-install -Syu check and potential reboot on kernel update
+ADD_PKG2="cute-bash jsysctl void-auto-update"
 
 # Time on VPS can drift. Installing an NTP client is highly recommended
 # to keep the system time accurate. Set to 'false' to disable.
@@ -456,7 +457,7 @@ if [ "$INSTALL_NTP" = true ]; then
 fi
 
 log "Installing simple cron..."
-try xbps-install -y scron
+try xbps-install -y scron run-parts
 ln -sf /etc/sv/crond /etc/runit/runsvdir/default/
 cat > /etc/crontab <<EOF
 #

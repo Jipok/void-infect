@@ -20,7 +20,8 @@ SWAP_GB=0            # Swap partition size in gigabytes; 0 for not creating part
 ADD_PKG="fuzzypkg vsv tmux dte nano btop fd ncdu tree fastfetch void-repo-nonfree"
 
 USE_JIPOK_REPO=true
-ADD_PKG2="cute-bash jsysctl"
+# void-auto-update: nightly xbps-install -Syu check and potential reboot on kernel update
+ADD_PKG2="cute-bash jsysctl void-auto-update"
 
 # Void mirror URL, or AUTO to pick the fastest
 VOID_MIRROR="${VOID_MIRROR:-AUTO}"
@@ -431,7 +432,7 @@ fi
 # Cron Setup
 #-------------------------------------------------------------------------
 log "Installing simple cron (scron)..."
-try xbps-install -y scron
+try xbps-install -y scron run-parts
 ln -sf /etc/sv/crond /etc/runit/runsvdir/default/
 cat > /etc/crontab <<EOF
 #
