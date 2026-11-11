@@ -121,7 +121,7 @@ trap handle_error ERR INT TERM
 if [ -z "$VOID_INFECT_STAGE_2" ]; then
     [[ $(id -u) == 0 ]] || error "This script must be run as root"
     [[ -d /void ]] && error "Remove /void before start"
-    (command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1) || error "This script requires either curl or wget to download files."
+    command -v curl >/dev/null 2>&1 || error "curl not found. Install it"
     command -v findmnt >/dev/null 2>&1 || error "findmnt not found. Install util-linux"
     command -v xz >/dev/null 2>&1 || error "xz not found. Install it"
 
@@ -150,16 +150,9 @@ if [ -z "$VOID_INFECT_STAGE_2" ]; then
         SSH_KEYS_SOURCE=$(mktemp)
         KEYS_URL="https://github.com/${GITHUB_USER}.keys"
 
-        if command -v curl >/dev/null 2>&1; then
-            if ! curl -fsL "$KEYS_URL" -o "$SSH_KEYS_SOURCE"; then
-                rm "$SSH_KEYS_SOURCE"
-                error "Failed to fetch keys for '$GITHUB_USER'. User not found or network error."
-            fi
-        else
-            if ! wget -qO "$SSH_KEYS_SOURCE" "$KEYS_URL"; then
-                rm "$SSH_KEYS_SOURCE"
-                error "Failed to fetch keys for '$GITHUB_USER'. User not found or network error."
-            fi
+        if ! curl -fsL "$KEYS_URL" -o "$SSH_KEYS_SOURCE"; then
+            rm "$SSH_KEYS_SOURCE"
+            error "Failed to fetch keys for '$GITHUB_USER'. User not found or network error."
         fi
 
         if [ ! -s "$SSH_KEYS_SOURCE" ]; then
@@ -171,28 +164,22 @@ if [ -z "$VOID_INFECT_STAGE_2" ]; then
     MIRRORS="https://repo-default.voidlinux.org https://repo-de.voidlinux.org https://ftp.lysator.liu.se/pub/voidlinux https://mirror.yandex.ru/mirrors/voidlinux"
     if [ "$VOID_MIRROR" = "AUTO" ]; then
         VOID_MIRROR="https://repo-default.voidlinux.org"
-        if command -v curl >/dev/null 2>&1; then
-            log "Selecting fastest mirror..."
-            best_speed=0
-            for m in $MIRRORS; do
-                speed=$(curl -fsS -r 0-524287 --connect-timeout 2 --max-time 2 -o /dev/null -w '%{speed_download}' "$m/current/x86_64-repodata" 2>/dev/null) || speed=0
-                speed=${speed%%.*}
-                if [ "${speed:-0}" -gt "$best_speed" ]; then
-                    best_speed=$speed
-                    VOID_MIRROR=$m
-                fi
-            done
-        fi
+        log "Selecting fastest mirror..."
+        best_speed=0
+        for m in $MIRRORS; do
+            speed=$(curl -fsS -r 0-524287 --connect-timeout 2 --max-time 2 -o /dev/null -w '%{speed_download}' "$m/current/x86_64-repodata" 2>/dev/null || true)
+            speed=${speed%%.*}
+            if [ "${speed:-0}" -gt "$best_speed" ]; then
+                best_speed=$speed
+                VOID_MIRROR=$m
+            fi
+        done
     fi
     export VOID_MIRROR="${VOID_MIRROR%/}"
     log "Using mirror: $VOID_MIRROR"
 
     log "Fetching the latest image information..."
-    if command -v curl >/dev/null 2>&1; then
-        IMAGE_INFO=$(curl -s "$VOID_MIRROR/live/current/sha256sum.txt" | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
-    elif command -v wget >/dev/null 2>&1; then
-        IMAGE_INFO=$(wget -qO- "$VOID_MIRROR/live/current/sha256sum.txt" | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
-    fi
+    IMAGE_INFO=$(curl -s "$VOID_MIRROR/live/current/sha256sum.txt" | grep 'void-x86_64-ROOTFS-' | grep -v 'musl')
     [ -n "$IMAGE_INFO" ] || error "Could not find image info in sha256sum.txt"
 
     # Parse filename, link and hash from the fetched info
@@ -213,11 +200,7 @@ if [ -z "$VOID_INFECT_STAGE_2" ]; then
     try mkdir -p /void/{proc,sys,dev,run,oldroot}
 
     log "Downloading $(basename "$VOID_LINK" .tar.xz)..."
-    if command -v curl >/dev/null 2>&1; then
-        try curl -fL --retry 3 "$VOID_LINK" -o "/void/rootfs.tar.xz"
-    elif command -v wget >/dev/null 2>&1; then
-        try wget --tries=3 -O "/void/rootfs.tar.xz" "$VOID_LINK"
-    fi
+    try curl -fL --retry 3 "$VOID_LINK" -o "/void/rootfs.tar.xz"
 
     log "Verifying SHA256 checksum..."
     CALCULATED_HASH=$(sha256sum "/void/rootfs.tar.xz" | cut -d' ' -f1)
