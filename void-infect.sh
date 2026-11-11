@@ -418,28 +418,39 @@ if [ "$VOID_MIRROR" != "https://repo-default.voidlinux.org" ]; then
     sed -i "s|https://repo-default.voidlinux.org|$VOID_MIRROR|g" /etc/xbps.d/*-repository-*.conf
 fi
 
+CUSTOM_REPO_READY=false
 if [ "$USE_JIPOK_REPO" = true ]; then
     log "Setting up custom repository..."
+    rm -f /etc/xbps.d/10-vur-Jipok.conf
+    mkdir -p /var/db/xbps/keys/
 
-    if try_soft wget --content-disposition -P /var/db/xbps/keys/ https://void-repo.jipok.ru/key; then
-        echo "repository=https://void-repo.jipok.ru" > /etc/xbps.d/10-vur-Jipok.conf
-
-        # Update index to verify connection
-        if try_soft xbps-install -S; then
-            CUSTOM_REPO_READY=true
-        else
-            warn "Failed to sync custom repository. Removing config."
-            rm -f /etc/xbps.d/10-vur-Jipok.conf
+    for JIPOK_REPO_URL in https://void-repo.jipok.ru https://void-repo2.jipok.ru; do
+        log "Trying custom repository: $JIPOK_REPO_URL"
+        key_dir=$(mktemp -d)
+        # Keep incomplete downloads out of the key store, including on retries.
+        if ! try_soft timeout --kill-after=5 20 wget --timeout=5 --tries=1 --content-disposition -P "$key_dir" "$JIPOK_REPO_URL/key"; then
+            rm -rf "$key_dir"
+            continue
         fi
-    else
-        warn "Failed to download custom repository key. Skipping."
+        install -m 644 "$key_dir"/* /var/db/xbps/keys/
+        rm -rf "$key_dir"
+
+        # Probe only this mirror, without failures from unrelated repositories.
+        if try_soft timeout --kill-after=5 30 xbps-install -i -R "$JIPOK_REPO_URL" -S; then
+            echo "repository=$JIPOK_REPO_URL" > /etc/xbps.d/10-vur-Jipok.conf
+            CUSTOM_REPO_READY=true
+            break
+        fi
+    done
+    if [ "$CUSTOM_REPO_READY" = false ]; then
+        warn "No custom repository mirror is available. Skipping."
     fi
 fi
 
 if [ -n "$ADD_PKG2" ]; then
     if [ "$CUSTOM_REPO_READY" = true ]; then
-        log "Installing packages from void-repo.jipok.ru..."
-        try_soft xbps-install -y $ADD_PKG2
+        log "Installing packages from $JIPOK_REPO_URL..."
+        try_soft xbps-install -y $ADD_PKG2 || true
     else
         warn "Skipping installation: $ADD_PKG2"
     fi
